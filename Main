@@ -1,0 +1,50 @@
+import pygame
+pygame.init() 
+window = pygame.display.set_mode((1280,720)) 
+
+class Player:
+    def __init__(self): 
+        self.x_cord=640-24
+        self.y_cord=360-32
+        self.width = 0
+        self.height = 0
+        self.image= pygame.image.load("blu.png")
+
+    def tick(self,keys):
+        speed=3
+        if keys[pygame.K_w]:
+            self.y_cord -= speed
+        if keys[pygame.K_a]:
+            self.x_cord -= speed
+        if keys[pygame.K_s]:
+            self.y_cord += speed
+        if keys[pygame.K_d]:
+            self.x_cord += speed
+    
+    def draw(self):
+        window.blit(self.image,(self.x_cord, self.y_cord))
+
+def main():
+    run = True
+    player=Player()
+    while run:
+        pygame.time.Clock().tick(60)
+        for event in pygame.event.get(): 
+            if event.type == pygame.QUIT: 
+                run = False
+
+        keys= pygame.key.get_pressed()
+        
+        player.tick(keys)
+
+        window.fill((52, 55, 235)) #dodać tło png
+
+        player.draw()
+        
+        pygame.display.update()
+
+
+        
+
+if __name__== "__main__":
+    main()

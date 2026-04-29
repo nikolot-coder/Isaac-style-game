@@ -20,13 +20,7 @@ class Player:
         self.y = y
         self.speed = 5
         
-        # Zamiast ładować obraz, tworzymy placeholder (różowy kwadrat)
-        # Zastąp "gracz.png" swoim obrazem
-        try:
-            self.image = pygame.image.load("assets/gracz.png")
-        except:
-            self.image = pygame.Surface((32, 32))
-            self.image.fill((255, 100, 200))  # Różowy kwadrat placeholder
+        self.image = pygame.image.load("postac.jpg")
         
         self.width = self.image.get_width()
         self.height = self.image.get_height()

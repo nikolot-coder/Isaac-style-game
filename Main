@@ -1,50 +1,117 @@
 import pygame
-pygame.init() 
-window = pygame.display.set_mode((1280,720)) 
+from random import randint
+import sys
+
+pygame.init()
+
+# Ustawienia ekranu
+WINDOW_WIDTH = 1280
+WINDOW_HEIGHT = 720
+FPS = 60
+
+window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+pygame.display.set_caption("Isaac - Style Game")
+clock = pygame.time.Clock()
+
 
 class Player:
-    def __init__(self): 
-        self.x_cord=640-24
-        self.y_cord=360-32
-        self.width = 0
-        self.height = 0
-        self.image= pygame.image.load("blu.png")
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.speed = 5
+        
+        # Zamiast ładować obraz, tworzymy placeholder (różowy kwadrat)
+        # Zastąp "gracz.png" swoim obrazem
+        try:
+            self.image = pygame.image.load("assets/gracz.png")
+        except:
+            self.image = pygame.Surface((32, 32))
+            self.image.fill((255, 100, 200))  # Różowy kwadrat placeholder
+        
+        self.width = self.image.get_width()
+        self.height = self.image.get_height()
+        self.hitbox = pygame.Rect(self.x, self.y, self.width, self.height)
 
-    def tick(self,keys):
-        speed=3
+    def handle_input(self, keys):
+        """Obsługa ruchu na WSAD"""
         if keys[pygame.K_w]:
-            self.y_cord -= speed
+            self.y -= self.speed
         if keys[pygame.K_a]:
-            self.x_cord -= speed
+            self.x -= self.speed
         if keys[pygame.K_s]:
-            self.y_cord += speed
+            self.y += self.speed
         if keys[pygame.K_d]:
-            self.x_cord += speed
+            self.x += self.speed
+        
+        # Ograniczenie postaci na ekran
+        if self.x < 0:
+            self.x = 0
+        if self.x + self.width > WINDOW_WIDTH:
+            self.x = WINDOW_WIDTH - self.width
+        if self.y < 0:
+            self.y = 0
+        if self.y + self.height > WINDOW_HEIGHT:
+            self.y = WINDOW_HEIGHT - self.height
+
+    def update(self):
+        """Aktualizacja hitboxa"""
+        self.hitbox = pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def draw(self, surface):
+        """Rysowanie postaci"""
+        surface.blit(self.image, (self.x, self.y))
+
+
+def load_background():
+    """Ładowanie tła"""
+    try:
+        background = pygame.image.load("assets/tło.png")
+        # Skaluj tło do rozmiaru ekranu jeśli jest potrzeba
+        background = pygame.transform.scale(background, (WINDOW_WIDTH, WINDOW_HEIGHT))
+    except:
+        # Placeholder - czarne tło
+        background = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        background.fill((0, 0, 0))
     
-    def draw(self):
-        window.blit(self.image,(self.x_cord, self.y_cord))
+    return background
+
 
 def main():
+    """Główna pętla gry"""
     run = True
-    player=Player()
+    
+    # Inicjalizacja elementów gry
+    player = Player(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+    background = load_background()
+    
     while run:
-        pygame.time.Clock().tick(60)
-        for event in pygame.event.get(): 
-            if event.type == pygame.QUIT: 
+        clock.tick(FPS)
+        
+        # Obsługa zdarzeń
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
                 run = False
-
-        keys= pygame.key.get_pressed()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    run = False
         
-        player.tick(keys)
-
-        window.fill((52, 55, 235)) #dodać tło png
-
-        player.draw()
+        # Obsługa wejścia gracza
+        keys = pygame.key.get_pressed()
+        player.handle_input(keys)
         
+        # Aktualizacja
+        player.update()
+        
+        # Rysowanie
+        window.blit(background, (0, 0))
+        player.draw(window)
+        
+        # Aktualizacja ekranu
         pygame.display.update()
+    
+    pygame.quit()
+    sys.exit()
 
 
-        
-
-if __name__== "__main__":
+if __name__ == "__main__":
     main()

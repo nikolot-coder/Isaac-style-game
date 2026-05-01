@@ -21,7 +21,7 @@ class Player:
         self.speed = 5
         
         try:
-            loaded_image = pygame.image.load("postac.jpg")
+            loaded_image = pygame.image.load("postac.png")
             self.image = pygame.transform.scale(loaded_image, (48, 64))
         except:
             # Placeholder - czerwony prostokąt jeśli nie ma grafiki

@@ -20,7 +20,13 @@ class Player:
         self.y = y
         self.speed = 5
         
-        self.image = pygame.image.load("postac.jpg")
+        try:
+            loaded_image = pygame.image.load("postac.jpg")
+            self.image = pygame.transform.scale(loaded_image, (48, 64))
+        except:
+            # Placeholder - czerwony prostokąt jeśli nie ma grafiki
+            self.image = pygame.Surface((48, 64))
+            self.image.fill((255, 0, 0))
         
         self.width = self.image.get_width()
         self.height = self.image.get_height()

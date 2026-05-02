@@ -22,10 +22,10 @@ class Player:
         
         try:
             loaded_image = pygame.image.load("postac.png")
-            self.image = pygame.transform.scale(loaded_image, (64, 48))
+            self.image = pygame.transform.scale(loaded_image, (48, 64))
         except:
             # Placeholder - czerwony prostokąt jeśli nie ma grafiki
-            self.image = pygame.Surface((64, 48))
+            self.image = pygame.Surface((48, 64))
             self.image.fill((255, 0, 0))
         
         self.width = self.image.get_width()

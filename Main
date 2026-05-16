@@ -1,5 +1,5 @@
 import pygame
-from random import randint
+from random import randint, choice
 import sys
 
 pygame.init()
@@ -14,26 +14,31 @@ pygame.display.set_caption("Isaac - Style Game")
 clock = pygame.time.Clock()
 
 
+class Enemy:
+    def __init__(self, x, y):
+        self.rect = pygame.Rect(x, y, 40, 40)
+        self.alive = True
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, (200, 50, 50), self.rect)
+
+
 class Player:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.speed = 5
-        
+        self.speed = 3
         try:
-            loaded_image = pygame.image.load("postac.png")
+            loaded_image = pygame.image.load(".vscode/Images/postac.png")
             self.image = pygame.transform.scale(loaded_image, (48, 64))
         except:
-            # Placeholder - czerwony prostokąt jeśli nie ma grafiki
             self.image = pygame.Surface((48, 64))
             self.image.fill((255, 0, 0))
-        
         self.width = self.image.get_width()
         self.height = self.image.get_height()
         self.hitbox = pygame.Rect(self.x, self.y, self.width, self.height)
 
     def handle_input(self, keys):
-        """Obsługa ruchu na WSAD"""
         if keys[pygame.K_w]:
             self.y -= self.speed
         if keys[pygame.K_a]:
@@ -62,31 +67,84 @@ class Player:
         surface.blit(self.image, (self.x, self.y))
 
 
-def load_background():
+def load_backgrounds():
     """Ładowanie tła"""
-    try:
-        background = pygame.image.load("assets/tło.png")
-        # Skaluj tło do rozmiaru ekranu jeśli jest potrzeba
-        background = pygame.transform.scale(background, (WINDOW_WIDTH, WINDOW_HEIGHT))
-    except:
-        # Placeholder - czarne tło
-        background = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-        background.fill((0, 0, 0))
-    
-    return background
+    backgrounds = []
+
+    background_files = [
+        ".vscode/Images/tlo0.png",
+        ".vscode/Images/tlo1.png",
+        ".vscode/Images/tlo2.png",
+        ".vscode/Images/tlo3.png"
+    ]
+
+    for path in background_files:
+        try:
+            bg = pygame.image.load(path)
+            bg = pygame.transform.scale(bg, (WINDOW_WIDTH, WINDOW_HEIGHT))
+            backgrounds.append(bg)
+        except:
+            pass
+
+    # jeśli żadne się nie załadowało
+    if len(backgrounds) == 0:
+        bg = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        bg.fill((0, 0, 0))
+        backgrounds.append(bg)
+
+    return backgrounds
+
+
+# czy dotyka krawędzi
+def player_touching_exit(player):
+    margin = 64
+
+    center_x = player.x + player.width // 2
+    center_y = player.y + player.height // 2
+
+    # góra
+    if center_y <= margin:
+        return True
+
+    # dół
+    if center_y >= WINDOW_HEIGHT - margin:
+        return True
+
+    # lewo
+    if center_x <= margin:
+        return True
+
+    # prawo
+    if center_x >= WINDOW_WIDTH - margin:
+        return True
+
+    return False
+
 
 
 def main():
     """Główna pętla gry"""
     run = True
-    
+
     # Inicjalizacja elementów gry
-    player = Player(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
-    background = load_background()
+    player = Player((WINDOW_WIDTH // 2) - 24, (WINDOW_HEIGHT // 2) - 32)
+    backgrounds = load_backgrounds()
+    current_background = choice(backgrounds)
+
+    # przykładowi wrogowie
+    enemies = []
+
+    for i in range(5):
+        enemies.append(
+            Enemy(
+                randint(100, WINDOW_WIDTH - 100),
+                randint(100, WINDOW_HEIGHT - 100)
+            )
+        )
     
     while run:
         clock.tick(FPS)
-        
+
         # Obsługa zdarzeń
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -94,21 +152,53 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     run = False
-        
-        # Obsługa wejścia gracza
+
+                # TESTOWE zabijanie wrogów spacją
+                if event.key == pygame.K_SPACE:
+                    if len(enemies) > 0:
+                        enemies.pop()
+
         keys = pygame.key.get_pressed()
         player.handle_input(keys)
-        
+
         # Aktualizacja
         player.update()
-        
-        # Rysowanie
-        window.blit(background, (0, 0))
+
+        # jeśli wszyscy wrogowie są martwi
+        all_enemies_dead = len(enemies) == 0
+
+        # jeśli gracz dotknie krawędzi
+        if all_enemies_dead and player_touching_exit(player):
+
+            # losuje nowe tło
+            current_background = choice(backgrounds)
+
+            # nowi wrogowie
+            enemies = []
+
+            for i in range(5):
+                enemies.append(
+                    Enemy(
+                        randint(100, WINDOW_WIDTH - 100),
+                        randint(100, WINDOW_HEIGHT - 100)
+                    )
+                )
+
+            # teleport do środka pokoju
+            player.x = (WINDOW_WIDTH // 2) - 24
+            player.y = (WINDOW_HEIGHT // 2) - 32
+
+        window.blit(current_background, (0, 0))
+
+        # rysuje wrogów
+        for enemy in enemies:
+            enemy.draw(window)
+
         player.draw(window)
         
         # Aktualizacja ekranu
         pygame.display.update()
-    
+
     pygame.quit()
     sys.exit()
 

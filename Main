@@ -245,32 +245,53 @@ def load_backgrounds():
 
 # czy dotyka krawędzi
 def player_touching_exit(player):
+
     margin = 32
 
     center_x = player.x + player.width // 2
     center_y = player.y + player.height // 2
 
     # góra
-    if center_y <= margin and center_x in range(int(WINDOW_WIDTH / 2) - 100, int(WINDOW_WIDTH / 2) + 100):
-        player.y = WINDOW_HEIGHT - player.height - margin - 5
-        return True
+    if (
+        center_y <= margin
+        and center_x in range(
+            int(WINDOW_WIDTH / 2) - 100,
+            int(WINDOW_WIDTH / 2) + 100
+        )
+    ):
+        return "top"
 
     # dół
-    if center_y >= WINDOW_HEIGHT - margin and center_x in range(int(WINDOW_WIDTH / 2) - 100, int(WINDOW_WIDTH / 2) + 100):
-        player.y = margin + 5
-        return True
+    if (
+        center_y >= WINDOW_HEIGHT - margin
+        and center_x in range(
+            int(WINDOW_WIDTH / 2) - 100,
+            int(WINDOW_WIDTH / 2) + 100
+        )
+    ):
+        return "bottom"
 
     # lewo
-    if center_x <= margin and center_y in range(int(WINDOW_HEIGHT / 2) - 100, int(WINDOW_HEIGHT / 2) + 100):
-        player.x = WINDOW_WIDTH - player.width - margin - 5
-        return True
+    if (
+        center_x <= margin
+        and center_y in range(
+            int(WINDOW_HEIGHT / 2) - 100,
+            int(WINDOW_HEIGHT / 2) + 100
+        )
+    ):
+        return "left"
 
     # prawo
-    if center_x >= WINDOW_WIDTH - margin and center_y in range(int(WINDOW_HEIGHT / 2) - 100, int(WINDOW_HEIGHT / 2) + 100):
-        player.x = margin + 5
-        return True
+    if (
+        center_x >= WINDOW_WIDTH - margin
+        and center_y in range(
+            int(WINDOW_HEIGHT / 2) - 100,
+            int(WINDOW_HEIGHT / 2) + 100
+        )
+    ):
+        return "right"
 
-    return False
+    return None
 
 def spawn_enemies(count, player):
 
@@ -296,6 +317,127 @@ def spawn_enemies(count, player):
 
     return enemies
 
+def get_next_room_position(room_x, room_y, exit_side):
+
+    if exit_side == "top":
+        return (room_x, room_y - 1)
+
+    if exit_side == "bottom":
+        return (room_x, room_y + 1)
+
+    if exit_side == "left":
+        return (room_x - 1, room_y)
+
+    if exit_side == "right":
+        return (room_x + 1, room_y)
+
+    return (room_x, room_y)
+
+def draw_minimap(surface, rooms, current_room):
+
+    # rozmiar minimapy
+    minimap_size = 100
+
+    minimap_x = WINDOW_WIDTH - minimap_size - 5
+    minimap_y = 5
+
+    # ile pokoi widać od środka
+    visible_radius = 2
+
+    # rozmiar jednego pokoju
+    room_size = minimap_size // (visible_radius * 2 + 1)
+
+    current_x, current_y = current_room
+
+    # tło minimapy
+    pygame.draw.rect(
+        surface,
+        (20, 20, 20),
+        (
+            minimap_x - 2,
+            minimap_y - 2,
+            minimap_size + 4,
+            minimap_size + 4
+        )
+    )
+
+    for room_pos in rooms:
+
+        rx, ry = room_pos
+
+        relative_x = rx - current_x
+        relative_y = ry - current_y
+
+        # renderuj tylko bliskie pokoje
+        if (
+            abs(relative_x) > visible_radius
+            or abs(relative_y) > visible_radius
+        ):
+            continue
+
+        room_data = rooms[room_pos]
+
+        draw_x = (
+            minimap_x
+            + (relative_x + visible_radius) * room_size
+        )
+
+        draw_y = (
+            minimap_y
+            + (relative_y + visible_radius) * room_size
+        )
+
+        rect = pygame.Rect(
+            draw_x,
+            draw_y,
+            room_size,
+            room_size
+        )
+
+        # kolory
+        if room_pos == current_room:
+
+            color = (255, 255, 255)
+
+        elif room_data["power"]:
+
+            color = (255, 105, 180)
+
+        elif room_data["cleared"]:
+
+            color = (120, 120, 120)
+
+        else:
+
+            color = (80, 80, 80)
+
+        pygame.draw.rect(
+            surface,
+            color,
+            rect
+        )
+
+        pygame.draw.rect(
+            surface,
+            (30, 30, 30),
+            rect,
+            1
+        )
+def teleport_player(player, exit_side):
+
+    margin = 32
+
+    if exit_side == "top":
+        player.y = WINDOW_HEIGHT - player.height - margin - 5
+
+    elif exit_side == "bottom":
+        player.y = margin + 5
+
+    elif exit_side == "left":
+        player.x = WINDOW_WIDTH - player.width - margin - 5
+
+    elif exit_side == "right":
+        player.x = margin + 5
 
 
 def main():
@@ -305,12 +447,39 @@ def main():
     # Inicjalizacja elementów gry
     player = Player((WINDOW_WIDTH // 2) - 24, (WINDOW_HEIGHT // 2) - 32)
     backgrounds = load_backgrounds()
+    try:
+        power_room_background = pygame.image.load(
+            ".vscode/Images/powerroom.png"
+        )
+
+        power_room_background = pygame.transform.scale(
+            power_room_background,
+            (WINDOW_WIDTH, WINDOW_HEIGHT)
+        )
+
+    except:
+        power_room_background = pygame.Surface(
+            (WINDOW_WIDTH, WINDOW_HEIGHT)
+        )
+
+        power_room_background.fill((60, 40, 90))
     current_background = choice(backgrounds)
 
     # przykładowi wrogowie
     enemies = spawn_enemies(5, player)
 
     num_of_lvl=0
+    # aktualna pozycja pokoju
+    room_x = 0
+    room_y = 0
+
+    rooms = {}
+
+    rooms[(room_x, room_y)] = {
+    "cleared": False,
+    "power": False,
+    "background": current_background
+    }
     while run:
         clock.tick(FPS)
 
@@ -339,20 +508,141 @@ def main():
             for enemy in enemies:
                 enemy.update(player)
 
-        # jeśli wszyscy wrogowie są martwi
         all_enemies_dead = len(enemies) == 0
+
+        # jeśli wszyscy wrogowie są martwi
+        if all_enemies_dead:
+            rooms[(room_x, room_y)]["cleared"] = True
 
         
         # jeśli gracz dotknie krawędzi
-        if all_enemies_dead and player_touching_exit(player):
+        exit_side = player_touching_exit(player)
 
-            # losuje nowe tło
-            current_background = choice(backgrounds)
-            num_of_lvl+=1
-            player.safe_timer = FPS/2
+        if all_enemies_dead and exit_side:
 
-            # nowi wrogowie
-            enemies = spawn_enemies(5+num_of_lvl, player)
+            teleport_player(player, exit_side)
+            next_room = get_next_room_position(
+                room_x,
+                room_y,
+                exit_side
+            )
+
+            # stary pokój
+            if next_room in rooms:
+
+                room_x, room_y = next_room
+
+                room_data = rooms[next_room]
+
+                current_background = room_data["background"]
+
+                # cleared = brak enemy
+                if room_data["cleared"]:
+                    enemies = []
+
+                else:
+                    enemy_count = min(5 + num_of_lvl, 20)
+                    enemies = spawn_enemies(enemy_count, player)
+
+                player.safe_timer = FPS
+
+            #nowy pokój
+            else:
+
+                num_of_lvl += 1
+
+                # losowe tło
+                room_background = choice(backgrounds)
+
+                # dane pokoju
+                rooms[next_room] = {
+                    "cleared": False,
+                    "power": False,
+                    "background": room_background
+                }
+
+                room_x, room_y = next_room
+
+                room_data = rooms[next_room]
+
+                # power room
+                if exit_side == "top" and randint(1, 100) <= 20:
+
+                    room_data["power"] = True
+                    room_data["background"] = power_room_background
+
+                    current_background = power_room_background
+
+                    enemies = []
+
+                # normal room
+                else:
+
+                    current_background = room_data["background"]
+
+                    enemy_count = min(5 + num_of_lvl, 20)
+
+                    enemies = spawn_enemies(
+                        enemy_count,
+                        player
+                    )
+
+                player.safe_timer = FPS
+                continue
+
+            room_x, room_y = next_room
+
+            if next_room in rooms:
+
+                room_x, room_y = next_room
+
+                room_data = rooms[next_room]
+
+                current_background = room_data["background"]
+
+                # cleared room = brak enemy
+                if room_data["cleared"]:
+                    enemies = []
+
+                else:
+                    enemy_count = min(5 + num_of_lvl, 20)
+                    enemies = spawn_enemies(enemy_count, player)
+
+                player.safe_timer = FPS
+
+                continue
+
+            num_of_lvl += 1
+            print("LEVEL:", num_of_lvl)
+
+            # Power room
+            if exit_side == "top":
+
+                # 20% szans
+                if randint(1, 100) <= 20:
+
+                    print("POWER ROOM")
+                    rooms[next_room]["power"] = True
+                    rooms[next_room]["background"] = power_room_background
+
+                    current_background = power_room_background
+                    
+                    enemies = []
+
+                else:
+
+                    current_background = rooms[next_room]["background"]
+                    enemy_count = min(5 + num_of_lvl, 20)
+                    enemies = spawn_enemies(enemy_count, player)
+
+            else:
+
+                current_background = rooms[next_room]["background"]
+                enemy_count = min(5 + num_of_lvl, 20)
+                enemies = spawn_enemies(enemy_count, player)
+
+            # safe second
+            player.safe_timer = FPS
 
         window.blit(current_background, (0, 0))
 
@@ -361,6 +651,8 @@ def main():
             enemy.draw(window)
 
         player.draw(window)
+
+        draw_minimap(window, rooms, (room_x, room_y)) 
         
         # Aktualizacja ekranu
         pygame.display.update()

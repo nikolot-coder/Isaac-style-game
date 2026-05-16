@@ -13,18 +13,163 @@ window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
 pygame.display.set_caption("Isaac - Style Game")
 clock = pygame.time.Clock()
 
-
+# Dla testu
 class Enemy:
+
     def __init__(self, x, y):
-        self.rect = pygame.Rect(x, y, 40, 40)
-        self.alive = True
+
+        self.x = x
+        self.y = y
+        self.width = 40
+        self.height = 40
+        self.speed = 2
+
+        self.rect = pygame.Rect(
+            self.x,
+            self.y,
+            self.width,
+            self.height
+        )
+
+        # kierunek ruchu
+        self.move_x = 0
+        self.move_y = 0
+
+        # timer zmiany decyzji
+        self.ai_timer = randint(20, 80)
+
+        # tryb ruchu
+        self.state = choice([
+            "chase",
+            "strafe_left",
+            "strafe_right",
+            "retreat"
+        ])
+
+        # dash timer
+        self.dash_timer = randint(120, 240)
+
+    def choose_new_state(self):
+
+        self.state = choice([
+            "chase",
+            "chase",
+            "chase",
+            "strafe_left",
+            "strafe_right",
+            "retreat"
+        ])
+
+        self.ai_timer = randint(25, 90)
+
+    def update(self, player):
+
+        self.ai_timer -= 1
+        self.dash_timer -= 1
+
+        if self.ai_timer <= 0:
+            self.choose_new_state()
+
+        # kierunek do gracza
+        dx = player.x - self.x
+        dy = player.y - self.y
+
+        distance = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+
+        nx = dx / distance
+        ny = dy / distance
+
+        """Tryby ruchu"""
+        # zwykły chase
+        if self.state == "chase":
+
+            self.move_x += nx * 0.4
+            self.move_y += ny * 0.4
+
+        # orbitowanie w lewo
+        elif self.state == "strafe_left":
+
+            self.move_x += -ny * 0.5
+            self.move_y += nx * 0.5
+
+        # orbitowanie wprawo
+        elif self.state == "strafe_right":
+
+            self.move_x += ny * 0.5
+            self.move_y += -nx * 0.5
+
+        # cofanie
+        elif self.state == "retreat":
+
+            self.move_x -= nx * 0.35
+            self.move_y -= ny * 0.35
+
+        # chaos
+        self.move_x += randint(-10, 10) / 50
+        self.move_y += randint(-10, 10) / 50
+
+        # dash
+        if self.dash_timer <= 0:
+
+            self.move_x += nx * 10
+            self.move_y += ny * 10
+            self.dash_timer = randint(120, 260)
+
+        # tarcie/opór ziemi(?)
+        self.move_x *= 0.92
+        self.move_y *= 0.92
+
+        # limit speeda
+        speed_length = max(
+            (self.move_x ** 2 + self.move_y ** 2) ** 0.5,
+            1
+        )
+
+        max_speed = self.speed
+        self.move_x = (self.move_x / speed_length) * min(speed_length, max_speed)
+        self.move_y = (self.move_y / speed_length) * min(speed_length, max_speed)
+
+        # ruch
+        self.x += self.move_x
+        self.y += self.move_y
+
+        # colizje mapy
+        if self.x < 0:
+            self.x = 0
+            self.move_x *= -0.5
+
+        if self.x + self.width > WINDOW_WIDTH:
+            self.x = WINDOW_WIDTH - self.width
+            self.move_x *= -0.5
+
+        if self.y < 0:
+            self.y = 0
+            self.move_y *= -0.5
+
+        if self.y + self.height > WINDOW_HEIGHT:
+            self.y = WINDOW_HEIGHT - self.height
+            self.move_y *= -0.5
+
+        # update hitboxa
+        self.rect = pygame.Rect(
+            self.x,
+            self.y,
+            self.width,
+            self.height
+        )
 
     def draw(self, surface):
-        pygame.draw.rect(surface, (200, 50, 50), self.rect)
+
+        pygame.draw.rect(
+            surface,
+            (200, 50, 50),
+            self.rect
+        )
 
 
 class Player:
     def __init__(self, x, y):
+        self.safe_timer = 0
         self.x = x
         self.y = y
         self.speed = 3
@@ -61,6 +206,9 @@ class Player:
     def update(self):
         """Aktualizacja hitboxa"""
         self.hitbox = pygame.Rect(self.x, self.y, self.width, self.height)
+        # Safe timer countdown
+        if self.safe_timer > 0:
+            self.safe_timer -= 1
 
     def draw(self, surface):
         """Rysowanie postaci"""
@@ -97,28 +245,56 @@ def load_backgrounds():
 
 # czy dotyka krawędzi
 def player_touching_exit(player):
-    margin = 64
+    margin = 32
 
     center_x = player.x + player.width // 2
     center_y = player.y + player.height // 2
 
     # góra
-    if center_y <= margin:
+    if center_y <= margin and center_x in range(int(WINDOW_WIDTH / 2) - 100, int(WINDOW_WIDTH / 2) + 100):
+        player.y = WINDOW_HEIGHT - player.height - margin - 5
         return True
 
     # dół
-    if center_y >= WINDOW_HEIGHT - margin:
+    if center_y >= WINDOW_HEIGHT - margin and center_x in range(int(WINDOW_WIDTH / 2) - 100, int(WINDOW_WIDTH / 2) + 100):
+        player.y = margin + 5
         return True
 
     # lewo
-    if center_x <= margin:
+    if center_x <= margin and center_y in range(int(WINDOW_HEIGHT / 2) - 100, int(WINDOW_HEIGHT / 2) + 100):
+        player.x = WINDOW_WIDTH - player.width - margin - 5
         return True
 
     # prawo
-    if center_x >= WINDOW_WIDTH - margin:
+    if center_x >= WINDOW_WIDTH - margin and center_y in range(int(WINDOW_HEIGHT / 2) - 100, int(WINDOW_HEIGHT / 2) + 100):
+        player.x = margin + 5
         return True
 
     return False
+
+def spawn_enemies(count, player):
+
+    enemies = []
+
+    for i in range(count):
+
+        while True:
+
+            x = randint(50, WINDOW_WIDTH - 50)
+            y = randint(50, WINDOW_HEIGHT - 50)
+
+            # dystans od gracza
+            dx = x - player.x
+            dy = y - player.y
+
+            distance = (dx ** 2 + dy ** 2) ** 0.5
+
+            # minimum 250 px od gracza
+            if distance > 250:
+                enemies.append(Enemy(x, y))
+                break
+
+    return enemies
 
 
 
@@ -132,16 +308,9 @@ def main():
     current_background = choice(backgrounds)
 
     # przykładowi wrogowie
-    enemies = []
+    enemies = spawn_enemies(5, player)
 
-    for i in range(5):
-        enemies.append(
-            Enemy(
-                randint(100, WINDOW_WIDTH - 100),
-                randint(100, WINDOW_HEIGHT - 100)
-            )
-        )
-    
+    num_of_lvl=0
     while run:
         clock.tick(FPS)
 
@@ -153,40 +322,37 @@ def main():
                 if event.key == pygame.K_ESCAPE:
                     run = False
 
-                # TESTOWE zabijanie wrogów spacją
-                if event.key == pygame.K_SPACE:
-                    if len(enemies) > 0:
-                        enemies.pop()
-
         keys = pygame.key.get_pressed()
         player.handle_input(keys)
+
+        # przytrzymanie SPACE usuwa wrogów
+        if keys[pygame.K_SPACE]:
+
+            if len(enemies) > 0:
+                enemies.pop()
 
         # Aktualizacja
         player.update()
 
+        # Wrogowie ruszają się dopiero po safe time
+        if player.safe_timer <= 0:
+            for enemy in enemies:
+                enemy.update(player)
+
         # jeśli wszyscy wrogowie są martwi
         all_enemies_dead = len(enemies) == 0
 
+        
         # jeśli gracz dotknie krawędzi
         if all_enemies_dead and player_touching_exit(player):
 
             # losuje nowe tło
             current_background = choice(backgrounds)
+            num_of_lvl+=1
+            player.safe_timer = FPS/2
 
             # nowi wrogowie
-            enemies = []
-
-            for i in range(5):
-                enemies.append(
-                    Enemy(
-                        randint(100, WINDOW_WIDTH - 100),
-                        randint(100, WINDOW_HEIGHT - 100)
-                    )
-                )
-
-            # teleport do środka pokoju
-            player.x = (WINDOW_WIDTH // 2) - 24
-            player.y = (WINDOW_HEIGHT // 2) - 32
+            enemies = spawn_enemies(5+num_of_lvl, player)
 
         window.blit(current_background, (0, 0))
 

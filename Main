@@ -1,0 +1,1639 @@
+import pygame
+from random import randint, choice
+import sys
+import math
+pygame.init()
+import json
+
+#Ustawienia
+
+SETTINGS_FILE = "settings.json"
+
+settings = {
+    "language": "English",
+    "gamma": 1.0,
+    "window_scale": 1.0,
+    "music_volume": 0.5,
+    "sfx_volume": 0.5
+}
+
+# Ustawienia ekranu
+WINDOW_WIDTH = 1280
+WINDOW_HEIGHT = 720
+FPS = 60
+
+window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+# powierzchnia efektów
+effect_surface = pygame.Surface(
+    (WINDOW_WIDTH, WINDOW_HEIGHT),
+    pygame.SRCALPHA
+)
+pygame.display.set_caption("Isaac - Style Game")
+clock = pygame.time.Clock()
+load_settings()
+
+# Dla testu
+class Enemy:
+
+    def __init__(self, x, y):
+
+        self.hp = 3
+        self.x = x
+        self.y = y
+        self.width = 40
+        self.height = 40
+        self.speed = 2
+
+        self.rect = pygame.Rect(
+            self.x,
+            self.y,
+            self.width,
+            self.height
+        )
+
+        # kierunek ruchu
+        self.move_x = 0
+        self.move_y = 0
+
+        # timer zmiany decyzji
+        self.ai_timer = randint(20, 80)
+
+        # tryb ruchu
+        self.state = choice([
+            "chase",
+            "strafe_left",
+            "strafe_right",
+            "retreat"
+        ])
+
+        # dash timer
+        self.dash_timer = randint(120, 240)
+
+    def choose_new_state(self):
+
+        self.state = choice([
+            "chase",
+            "chase",
+            "chase",
+            "strafe_left",
+            "strafe_right",
+            "retreat"
+        ])
+
+        self.ai_timer = randint(25, 90)
+
+    def update(self, player):
+
+        self.ai_timer -= 1
+        self.dash_timer -= 1
+
+        if self.ai_timer <= 0:
+            self.choose_new_state()
+
+        # kierunek do gracza
+        dx = player.x - self.x
+        dy = player.y - self.y
+
+        distance = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+
+        nx = dx / distance
+        ny = dy / distance
+
+        """Tryby ruchu"""
+        # zwykły chase
+        if self.state == "chase":
+
+            self.move_x += nx * 0.4
+            self.move_y += ny * 0.4
+
+        # orbitowanie w lewo
+        elif self.state == "strafe_left":
+
+            self.move_x += -ny * 0.5
+            self.move_y += nx * 0.5
+
+        # orbitowanie wprawo
+        elif self.state == "strafe_right":
+
+            self.move_x += ny * 0.5
+            self.move_y += -nx * 0.5
+
+        # cofanie
+        elif self.state == "retreat":
+
+            self.move_x -= nx * 0.35
+            self.move_y -= ny * 0.35
+
+        # chaos
+        self.move_x += randint(-10, 10) / 50
+        self.move_y += randint(-10, 10) / 50
+
+        # dash
+        if self.dash_timer <= 0:
+
+            self.move_x += nx * 10
+            self.move_y += ny * 10
+            self.dash_timer = randint(120, 260)
+
+        # tarcie/opór ziemi(?)
+        self.move_x *= 0.92
+        self.move_y *= 0.92
+
+        # limit speeda
+        speed_length = max(
+            (self.move_x ** 2 + self.move_y ** 2) ** 0.5,
+            1
+        )
+
+        max_speed = self.speed
+        self.move_x = (self.move_x / speed_length) * min(speed_length, max_speed)
+        self.move_y = (self.move_y / speed_length) * min(speed_length, max_speed)
+
+        # ruch
+        self.x += self.move_x
+        self.y += self.move_y
+
+        # colizje mapy
+        if self.x < 0:
+            self.x = 0
+            self.move_x *= -0.5
+
+        if self.x + self.width > WINDOW_WIDTH:
+            self.x = WINDOW_WIDTH - self.width
+            self.move_x *= -0.5
+
+        if self.y < 0:
+            self.y = 0
+            self.move_y *= -0.5
+
+        if self.y + self.height > WINDOW_HEIGHT:
+            self.y = WINDOW_HEIGHT - self.height
+            self.move_y *= -0.5
+
+        # update hitboxa
+        self.rect = pygame.Rect(
+            self.x,
+            self.y,
+            self.width,
+            self.height
+        )
+
+    def draw(self, surface):
+
+        pygame.draw.rect(
+            surface,
+            (200, 50, 50),
+            self.rect
+        )
+
+class Slash:
+
+    def __init__(self, player, mouse_pos):
+
+        self.damage = 1
+        self.duration = 12
+        self.hit_enemies = {}
+
+        self.cx = player.x + player.width // 2
+        self.cy = player.y + player.height // 2
+
+        mx, my = mouse_pos
+
+        dx = mx - self.cx
+        dy = my - self.cy
+
+        length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+
+        self.dir_x = dx / length
+        self.dir_y = dy / length
+
+        self.angle = math.degrees(
+            math.atan2(-self.dir_y, self.dir_x)
+        )
+
+        self.offset = 15
+        self.range = 90
+
+        # ANIMACJA
+        self.frames = []
+        self.current_frame = 0
+        self.frame_timer = 0
+        self.frame_speed = 4
+
+        self.use_images = True
+
+        # ładowanie slashy
+        for i in range(1, 4):
+
+            try:
+
+                img = pygame.image.load(
+                    f".vscode/Images/Slash{i}.png"
+                ).convert_alpha()
+
+                img = pygame.transform.scale(
+                    img,
+                    (140, 140)
+                )
+
+                self.frames.append(img)
+
+            except:
+
+                self.use_images = False
+                break
+
+    def update(self):
+
+        self.duration -= 1
+
+        # cooldown trafień enemy
+        for enemy in list(self.hit_enemies.keys()):
+
+            self.hit_enemies[enemy] -= 1
+
+            if self.hit_enemies[enemy] <= 0:
+                del self.hit_enemies[enemy]
+
+        # animacja
+        if self.use_images and len(self.frames) > 1:
+
+            self.frame_timer += 1
+
+            if self.frame_timer >= self.frame_speed:
+
+                self.frame_timer = 0
+
+                if self.current_frame < len(self.frames) - 1:
+                    self.current_frame += 1
+
+    def hits_enemy(self, enemy):
+
+        enemy_center_x = enemy.x + enemy.width / 2
+        enemy_center_y = enemy.y + enemy.height / 2
+
+        # początek slasha
+        start_x = self.cx + self.dir_x * self.offset
+        start_y = self.cy + self.dir_y * self.offset
+
+        dx = enemy_center_x - start_x
+        dy = enemy_center_y - start_y
+
+        distance = (dx ** 2 + dy ** 2) ** 0.5
+
+        # poza zasięgiem
+        if distance > self.range:
+            return False
+
+        # kąt enemy
+        enemy_angle = math.atan2(dy, dx)
+
+        # kąt slasha
+        slash_angle = math.atan2(
+            self.dir_y,
+            self.dir_x
+        )
+
+        # szerokość wachlarza
+        arc_size = math.radians(70)
+
+        # różnica kątów
+        angle_diff = abs(enemy_angle - slash_angle)
+
+        # poprawka overflow
+        if angle_diff > math.pi:
+            angle_diff = (2 * math.pi) - angle_diff
+
+        return angle_diff <= arc_size / 2
+
+    def draw(self, surface):
+
+        start_x = self.cx + self.dir_x * self.offset
+        start_y = self.cy + self.dir_y * self.offset
+
+        # RYSOWANIE PNG
+        if self.use_images:
+
+            image = self.frames[self.current_frame]
+
+            rotated = pygame.transform.rotate(
+                image,
+                self.angle
+            )
+
+            rect = rotated.get_rect(
+                center=(start_x, start_y)
+            )
+
+            surface.blit(rotated, rect)
+
+            # glow
+            glow = pygame.transform.scale(
+                rotated,
+                (
+                    int(rotated.get_width() * 1.2),
+                    int(rotated.get_height() * 1.2)
+                )
+            )
+
+            glow.set_alpha(70)
+
+            effect_surface.blit(
+                glow,
+                (
+                    rect.x - 10,
+                    rect.y - 10
+                ),
+                special_flags=pygame.BLEND_RGBA_ADD
+            )
+
+        # FALLBACK 
+        else:
+
+            angle = math.atan2(
+                self.dir_y,
+                self.dir_x
+            )
+
+            arc_size = math.radians(70)
+
+            radius = self.range
+
+            points = []
+
+            points.append((start_x, start_y))
+
+            steps = 20
+
+            for i in range(steps + 1):
+
+                current_angle = (
+                    angle - arc_size / 2
+                    + (arc_size / steps) * i
+                )
+
+                px = (
+                    start_x
+                    + math.cos(current_angle) * radius
+                )
+
+                py = (
+                    start_y
+                    + math.sin(current_angle) * radius
+                )
+
+                points.append((px, py))
+
+            pygame.draw.polygon(
+                surface,
+                (255, 255, 255),
+                points
+            )
+
+            for point in points[1:]:
+
+                pygame.draw.circle(
+                    surface,
+                    (255, 255, 255),
+                    (int(point[0]), int(point[1])),
+                    4
+                )
+
+class Bullet:
+
+    def __init__(self, x, y, mouse_pos):
+
+        self.x = x
+        self.y = y
+
+        self.radius = 6
+
+        self.speed = 10
+
+        self.damage = 2
+
+        mx, my = mouse_pos
+
+        dx = mx - x
+        dy = my - y
+
+        length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+
+        self.dir_x = dx / length
+        self.dir_y = dy / length
+
+        self.alive = True
+
+    def update(self):
+
+        self.x += self.dir_x * self.speed
+        self.y += self.dir_y * self.speed
+
+        # poza ekranem
+        if (
+            self.x < -50
+            or self.x > WINDOW_WIDTH + 50
+            or self.y < -50
+            or self.y > WINDOW_HEIGHT + 50
+        ):
+
+            self.alive = False
+
+    def get_rect(self):
+
+        return pygame.Rect(
+            self.x - self.radius,
+            self.y - self.radius,
+            self.radius * 2,
+            self.radius * 2
+        )
+
+    def draw(self, surface):
+
+        # glow
+        for i in range(4):
+
+            radius = self.radius + (i * 5)
+
+            alpha = max(15, 90 - i * 20)
+
+            glow_surface = pygame.Surface(
+                (radius * 4, radius * 4),
+                pygame.SRCALPHA
+            )
+
+            pygame.draw.circle(
+                glow_surface,
+                (255, 220, 100, alpha),
+                (radius * 2, radius * 2),
+                radius
+            )
+
+            effect_surface.blit(
+                glow_surface,
+                (
+                    self.x - radius * 2,
+                    self.y - radius * 2
+                ),
+                special_flags=pygame.BLEND_RGBA_ADD
+            )
+
+        # rdzeń
+        pygame.draw.circle(
+            surface,
+            (255, 240, 180),
+            (int(self.x), int(self.y)),
+            self.radius
+        )
+
+class Player:
+    def __init__(self, x, y):
+        # Ataki
+        self.shoot_cooldown = 0
+        self.max_ammo = 6
+        self.ammo = self.max_ammo
+        self.reloading = False
+        self.reload_timer = 0
+
+        self.attack_cooldown = 0
+
+        self.safe_timer = 0
+        self.x = x
+        self.y = y
+        self.speed = 3
+        try:
+            loaded_image = pygame.image.load(".vscode/Images/postac.png")
+            self.image = pygame.transform.scale(loaded_image, (48, 64))
+        except:
+            self.image = pygame.Surface((48, 64))
+            self.image.fill((255, 0, 0))
+        self.width = self.image.get_width()
+        self.height = self.image.get_height()
+        self.hitbox = pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def handle_input(self, keys):
+        if keys[pygame.K_w]:
+            self.y -= self.speed
+        if keys[pygame.K_a]:
+            self.x -= self.speed
+        if keys[pygame.K_s]:
+            self.y += self.speed
+        if keys[pygame.K_d]:
+            self.x += self.speed
+        
+        # Ograniczenie postaci na ekran
+        if self.x < 0:
+            self.x = 0
+        if self.x + self.width > WINDOW_WIDTH:
+            self.x = WINDOW_WIDTH - self.width
+        if self.y < 0:
+            self.y = 0
+        if self.y + self.height > WINDOW_HEIGHT:
+            self.y = WINDOW_HEIGHT - self.height
+
+    def update(self):
+        """Aktualizacja hitboxa"""
+        self.hitbox = pygame.Rect(self.x, self.y, self.width, self.height)
+        # Safe timer countdown
+        if self.safe_timer > 0:
+            self.safe_timer -= 1
+
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= 1
+
+        if self.shoot_cooldown > 0:
+            self.shoot_cooldown -= 1
+
+        # reload
+        if self.reloading:
+
+            self.reload_timer -= 1
+
+            if self.reload_timer <= 0:
+
+                self.reloading = False
+                self.ammo = self.max_ammo
+
+    def draw(self, surface):
+        """Rysowanie postaci"""
+        surface.blit(self.image, (self.x, self.y))
+
+
+def load_backgrounds():
+    """Ładowanie tła"""
+    backgrounds = []
+
+    background_files = [
+        ".vscode/Images/tlo0.png",
+        ".vscode/Images/tlo1.png",
+        ".vscode/Images/tlo2.png",
+        ".vscode/Images/tlo3.png"
+    ]
+
+    for path in background_files:
+        try:
+            bg = pygame.image.load(path)
+            bg = pygame.transform.scale(bg, (WINDOW_WIDTH, WINDOW_HEIGHT))
+            backgrounds.append(bg)
+        except:
+            pass
+
+    # jeśli żadne się nie załadowało
+    if len(backgrounds) == 0:
+        bg = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        bg.fill((0, 0, 0))
+        backgrounds.append(bg)
+
+    return backgrounds
+
+
+# czy dotyka krawędzi
+def player_touching_exit(player):
+
+    margin = 32
+
+    center_x = player.x + player.width // 2
+    center_y = player.y + player.height // 2
+
+    # góra
+    if (
+        center_y <= margin
+        and center_x in range(
+            int(WINDOW_WIDTH / 2) - 100,
+            int(WINDOW_WIDTH / 2) + 100
+        )
+    ):
+        return "top"
+
+    # dół
+    if (
+        center_y >= WINDOW_HEIGHT - margin
+        and center_x in range(
+            int(WINDOW_WIDTH / 2) - 100,
+            int(WINDOW_WIDTH / 2) + 100
+        )
+    ):
+        return "bottom"
+
+    # lewo
+    if (
+        center_x <= margin
+        and center_y in range(
+            int(WINDOW_HEIGHT / 2) - 100,
+            int(WINDOW_HEIGHT / 2) + 100
+        )
+    ):
+        return "left"
+
+    # prawo
+    if (
+        center_x >= WINDOW_WIDTH - margin
+        and center_y in range(
+            int(WINDOW_HEIGHT / 2) - 100,
+            int(WINDOW_HEIGHT / 2) + 100
+        )
+    ):
+        return "right"
+
+    return None
+
+def spawn_enemies(count, player):
+
+    enemies = []
+
+    for i in range(count):
+
+        while True:
+
+            x = randint(50, WINDOW_WIDTH - 50)
+            y = randint(50, WINDOW_HEIGHT - 50)
+
+            # dystans od gracza
+            dx = x - player.x
+            dy = y - player.y
+
+            distance = (dx ** 2 + dy ** 2) ** 0.5
+
+            # minimum 250 px od gracza
+            if distance > 250:
+                enemies.append(Enemy(x, y))
+                break
+
+    return enemies
+
+def get_next_room_position(room_x, room_y, exit_side):
+
+    if exit_side == "top":
+        return (room_x, room_y - 1)
+
+    if exit_side == "bottom":
+        return (room_x, room_y + 1)
+
+    if exit_side == "left":
+        return (room_x - 1, room_y)
+
+    if exit_side == "right":
+        return (room_x + 1, room_y)
+
+    return (room_x, room_y)
+
+def draw_minimap(surface, rooms, current_room):
+
+    # rozmiar minimapy
+    minimap_size = 100
+
+    minimap_x = WINDOW_WIDTH - minimap_size - 5
+    minimap_y = 5
+
+    # ile pokoi widać od środka
+    visible_radius = 2
+
+    # rozmiar jednego pokoju
+    room_size = minimap_size // (visible_radius * 2 + 1)
+
+    current_x, current_y = current_room
+
+    # tło minimapy
+    pygame.draw.rect(
+        surface,
+        (20, 20, 20),
+        (
+            minimap_x - 2,
+            minimap_y - 2,
+            minimap_size + 4,
+            minimap_size + 4
+        )
+    )
+
+    for room_pos in rooms:
+
+        rx, ry = room_pos
+
+        relative_x = rx - current_x
+        relative_y = ry - current_y
+
+        # renderuj tylko bliskie pokoje
+        if (
+            abs(relative_x) > visible_radius
+            or abs(relative_y) > visible_radius
+        ):
+            continue
+
+        room_data = rooms[room_pos]
+
+        draw_x = (
+            minimap_x
+            + (relative_x + visible_radius) * room_size
+        )
+
+        draw_y = (
+            minimap_y
+            + (relative_y + visible_radius) * room_size
+        )
+
+        rect = pygame.Rect(
+            draw_x,
+            draw_y,
+            room_size,
+            room_size
+        )
+
+        # kolory
+        if room_pos == current_room:
+
+            color = (255, 255, 255)
+
+        elif room_data["power"]:
+
+            color = (255, 105, 180)
+
+        elif room_data["cleared"]:
+
+            color = (120, 120, 120)
+
+        else:
+
+            color = (80, 80, 80)
+
+        pygame.draw.rect(
+            surface,
+            color,
+            rect
+        )
+
+        pygame.draw.rect(
+            surface,
+            (30, 30, 30),
+            rect,
+            1
+        )
+def teleport_player(player, exit_side):
+
+    margin = 32
+
+    if exit_side == "top":
+        player.y = WINDOW_HEIGHT - player.height - margin - 5
+
+    elif exit_side == "bottom":
+        player.y = margin + 5
+
+    elif exit_side == "left":
+        player.x = WINDOW_WIDTH - player.width - margin - 5
+
+    elif exit_side == "right":
+        player.x = margin + 5
+
+def save_settings():
+
+    with open(SETTINGS_FILE, "w") as file:
+
+        json.dump(settings, file)
+
+
+def load_settings():
+
+    global settings
+
+    try:
+
+        with open(SETTINGS_FILE, "r") as file:
+
+            settings = json.load(file)
+
+    except:
+        save_settings()
+
+def apply_settings():
+
+    global window
+    global WINDOW_WIDTH
+    global WINDOW_HEIGHT
+    global effect_surface
+
+    scale = settings["window_scale"]
+
+    WINDOW_WIDTH = int(1280 * scale)
+    WINDOW_HEIGHT = int(720 * scale)
+
+    window = pygame.display.set_mode(
+        (WINDOW_WIDTH, WINDOW_HEIGHT)
+    )
+
+    # nowa powierzchnia efektów
+    effect_surface = pygame.Surface(
+        (WINDOW_WIDTH, WINDOW_HEIGHT),
+        pygame.SRCALPHA
+    )
+
+    pygame.mixer.music.set_volume(
+        settings["music_volume"]
+    )
+
+def settings_menu():
+
+    font = pygame.font.SysFont(
+        "comicsansms",
+        38,
+        bold=True
+    )
+
+    title_font = pygame.font.SysFont(
+        "comicsansms",
+        80,
+        bold=True
+    )
+
+    languages = [
+        "English",
+        "Polski",
+        "Japanese"
+    ]
+
+    resolutions = [
+        0.75,
+        1.0,
+        1.25,
+        1.5
+    ]
+
+    selected = 0
+
+    options = [
+        "Language",
+        "Gamma",
+        "Window Size",
+        "Music Volume",
+        "SFX Volume",
+        "Back"
+    ]
+
+    while True:
+
+        clock.tick(FPS)
+
+        for event in pygame.event.get():
+
+            if event.type == pygame.QUIT:
+
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.KEYDOWN:
+
+                # góra dół
+                if event.key == pygame.K_UP:
+
+                    selected = (
+                        selected - 1
+                    ) % len(options)
+
+                if event.key == pygame.K_DOWN:
+
+                    selected = (
+                        selected + 1
+                    ) % len(options)
+
+                # LEWO
+                if event.key == pygame.K_LEFT:
+
+                    # language
+                    if selected == 0:
+
+                        index = languages.index(
+                            settings["language"]
+                        )
+
+                        index = (
+                            index - 1
+                        ) % len(languages)
+
+                        settings["language"] = (
+                            languages[index]
+                        )
+
+                    # gamma
+                    elif selected == 1:
+
+                        settings["gamma"] = max(
+                            0.5,
+                            settings["gamma"] - 0.1
+                        )
+
+                    # resolution
+                    elif selected == 2:
+
+                        index = resolutions.index(
+                            settings["window_scale"]
+                        )
+
+                        index = max(0, index - 1)
+
+                        settings["window_scale"] = (
+                            resolutions[index]
+                        )
+
+                        apply_settings()
+
+                    # music
+                    elif selected == 3:
+
+                        settings["music_volume"] = max(
+                            0,
+                            settings["music_volume"] - 0.1
+                        )
+
+                        apply_settings()
+
+                    # sfx
+                    elif selected == 4:
+
+                        settings["sfx_volume"] = max(
+                            0,
+                            settings["sfx_volume"] - 0.1
+                        )
+
+                # PRAWO
+                if event.key == pygame.K_RIGHT:
+
+                    if selected == 0:
+
+                        index = languages.index(
+                            settings["language"]
+                        )
+
+                        index = (
+                            index + 1
+                        ) % len(languages)
+
+                        settings["language"] = (
+                            languages[index]
+                        )
+
+                    elif selected == 1:
+
+                        settings["gamma"] = min(
+                            2.0,
+                            settings["gamma"] + 0.1
+                        )
+
+                    elif selected == 2:
+
+                        index = resolutions.index(
+                            settings["window_scale"]
+                        )
+
+                        index = min(
+                            len(resolutions) - 1,
+                            index + 1
+                        )
+
+                        settings["window_scale"] = (
+                            resolutions[index]
+                        )
+
+                        apply_settings()
+
+                    elif selected == 3:
+
+                        settings["music_volume"] = min(
+                            1,
+                            settings["music_volume"] + 0.1
+                        )
+
+                        apply_settings()
+
+                    elif selected == 4:
+
+                        settings["sfx_volume"] = min(
+                            1,
+                            settings["sfx_volume"] + 0.1
+                        )
+
+                # ENTER
+                if event.key == pygame.K_RETURN:
+
+                    if selected == 5:
+
+                        save_settings()
+                        return
+
+        # ===== RYSOWANIE =====
+
+        window.fill((10, 10, 10))
+
+        title = title_font.render(
+            "SETTINGS",
+            True,
+            (255, 255, 255)
+        )
+
+        window.blit(
+            title,
+            (
+                WINDOW_WIDTH // 2
+                - title.get_width() // 2,
+                60
+            )
+        )
+
+        values = [
+            settings["language"],
+            round(settings["gamma"], 1),
+            f'{WINDOW_WIDTH}x{WINDOW_HEIGHT}',
+            int(settings["music_volume"] * 100),
+            int(settings["sfx_volume"] * 100),
+            ""
+        ]
+
+        for i, option in enumerate(options):
+
+            color = (
+                (127, 255, 212)
+                if i == selected
+                else (255, 255, 255)
+            )
+
+            text = font.render(
+                f"{option}: {values[i]}",
+                True,
+                color
+            )
+
+            window.blit(
+                text,
+                (
+                    180,
+                    180 + i * 70
+                )
+            )
+
+        pygame.display.update()
+
+def main_menu():
+
+    title_font = pygame.font.SysFont(
+        "comicsansms",
+        110,
+        bold=True
+    )
+
+    button_font = pygame.font.SysFont(
+        "comicsansms",
+        42,
+        bold=True
+    )
+
+    # Kolory
+
+    BG_COLOR = (12, 12, 12)
+
+    AQUA = (127, 255, 212)
+
+    AQUA_HOVER = (170, 255, 230)
+
+    OUTLINE = (0, 0, 0)
+
+    TEXT = (0, 0, 0)
+
+    # Pozycje przycisków
+
+    play_rect = pygame.Rect(
+        60,
+        300,
+        340,
+        90
+    )
+
+    # offset +50px w prawo
+    settings_rect = pygame.Rect(
+        110,
+        430,
+        340,
+        90
+    )
+
+    quit_rect = pygame.Rect(
+        60,
+        560,
+        340,
+        90
+    )
+
+    while True:
+
+        clock.tick(FPS)
+
+        mouse_pos = pygame.mouse.get_pos()
+
+        for event in pygame.event.get():
+
+            if event.type == pygame.QUIT:
+
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.KEYDOWN:
+
+                if event.key == pygame.K_ESCAPE:
+
+                    pygame.quit()
+                    sys.exit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+
+                if event.button == 1:
+
+                    if play_rect.collidepoint(mouse_pos):
+                        return
+
+                    if settings_rect.collidepoint(mouse_pos):
+                        settings_menu()
+
+                    if quit_rect.collidepoint(mouse_pos):
+
+                        pygame.quit()
+                        sys.exit()
+
+        # Tło
+
+        window.fill(BG_COLOR)
+
+        # Tytuł
+
+        title = title_font.render(
+            "NAME",
+            True,
+            (255, 255, 255)
+        )
+
+        window.blit(
+            title,
+            (
+                WINDOW_WIDTH // 2
+                - title.get_width() // 2,
+
+                70
+            )
+        )
+
+        # Rysowanie przycisków
+
+        def draw_button(rect, text, hover=False):
+
+            color = AQUA_HOVER if hover else AQUA
+
+            x = rect.x
+            y = rect.y
+            w = rect.width
+            h = rect.height
+
+            # trapez
+            points = [
+                (x + 35, y),
+                (x + w - 35, y),
+                (x + w, y + h // 2),
+                (x + w - 35, y + h),
+                (x + 35, y + h),
+                (x, y + h // 2)
+            ]
+
+            pygame.draw.polygon(
+                window,
+                color,
+                points
+            )
+
+            pygame.draw.polygon(
+                window,
+                OUTLINE,
+                points,
+                8
+            )
+
+            # tekst
+            label = button_font.render(
+                text,
+                True,
+                TEXT
+            )
+
+            window.blit(
+                label,
+                (
+                    rect.centerx
+                    - label.get_width() // 2,
+
+                    rect.centery
+                    - label.get_height() // 2
+                )
+            )
+
+        # Przyciski
+
+        draw_button(
+            play_rect,
+            "PLAY",
+            play_rect.collidepoint(mouse_pos)
+        )
+
+        draw_button(
+            settings_rect,
+            "SETTING",
+            settings_rect.collidepoint(mouse_pos)
+        )
+
+        draw_button(
+            quit_rect,
+            "QUIT",
+            quit_rect.collidepoint(mouse_pos)
+        )
+
+        pygame.display.update()
+
+def main():
+    """Główna pętla gry"""
+    run = True
+
+    # Inicjalizacja elementów gry
+    player = Player((WINDOW_WIDTH // 2) - 24, (WINDOW_HEIGHT // 2) - 32)
+    backgrounds = load_backgrounds()
+    try:
+        power_room_background = pygame.image.load(
+            ".vscode/Images/powerroom.png"
+        )
+
+        power_room_background = pygame.transform.scale(
+            power_room_background,
+            (WINDOW_WIDTH, WINDOW_HEIGHT)
+        )
+
+    except:
+        power_room_background = pygame.Surface(
+            (WINDOW_WIDTH, WINDOW_HEIGHT)
+        )
+
+        power_room_background.fill((60, 40, 90))
+    current_background = choice(backgrounds)
+
+    # startowy pokój jest safe
+    enemies = []
+    # slashe
+    slashes = []
+    # pociski
+    bullets = []
+
+    num_of_lvl=0
+    # aktualna pozycja pokoju
+    room_x = 0
+    room_y = 0
+
+    rooms = {}
+
+    rooms[(room_x, room_y)] = {
+    "cleared": False,
+    "power": False,
+    "background": current_background
+    }
+    while run:
+        clock.tick(FPS)
+
+        # Obsługa zdarzeń
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    run = False
+
+        keys = pygame.key.get_pressed()
+        player.handle_input(keys)
+
+        # przytrzymanie SPACE usuwa wrogów
+        if keys[pygame.K_SPACE]:
+
+            if len(enemies) > 0:
+                enemies.pop()
+
+        # Atakowanie
+        if event.type == pygame.MOUSEBUTTONDOWN:
+
+            # LEWY — slash
+            if event.button == 1:
+
+                if (
+                    len(slashes) == 0
+                    and player.attack_cooldown <= 0
+                ):
+
+                    slash = Slash(
+                        player,
+                        pygame.mouse.get_pos()
+                    )
+
+                    slashes.append(slash)
+
+                    player.attack_cooldown = 18
+
+            # PRAWY — strzał
+            if event.button == 3:
+
+                if (
+                    player.shoot_cooldown <= 0
+                    and not player.reloading
+                    and player.ammo > 0
+                ):
+
+                    bullet = Bullet(
+                        player.x + player.width // 2,
+                        player.y + player.height // 2,
+                        pygame.mouse.get_pos()
+                    )
+
+                    bullets.append(bullet)
+
+                    player.ammo -= 1
+
+                    # cooldown 3x większy od slasha
+                    player.shoot_cooldown = 54
+
+                    # reload po 6 strzałach
+                    if player.ammo <= 0:
+
+                        player.reloading = True
+
+                        # 3x dłuższe niż strzał
+                        player.reload_timer = player.shoot_cooldown * 3
+        # Aktualizacja
+        player.update()
+
+        # slash update
+        for slash in slashes[:]:
+
+            slash.update()
+
+            # damage enemies
+            for enemy in enemies[:]:
+
+                if (
+                    slash.hits_enemy(enemy)
+                    and enemy not in slash.hit_enemies
+                ):
+                    # Ograniczenie klatek
+                    slash.hit_enemies[enemy] = 10
+
+                    enemy.hp -= slash.damage
+
+                    if enemy.hp <= 0:
+                        enemies.remove(enemy)
+
+            if slash.duration <= 0:
+                slashes.remove(slash)
+
+        # Bullet update 
+        for bullet in bullets[:]:
+
+            bullet.update()
+
+            bullet_rect = bullet.get_rect()
+
+            for enemy in enemies[:]:
+
+                if bullet_rect.colliderect(enemy.rect):
+
+                    enemy.hp -= bullet.damage
+
+                    bullet.alive = False
+
+                    if enemy.hp <= 0:
+
+                        enemies.remove(enemy)
+
+            if not bullet.alive:
+
+                bullets.remove(bullet)
+
+        # Wrogowie ruszają się dopiero po safe time
+        if player.safe_timer <= 0:
+            for enemy in enemies:
+                enemy.update(player)
+
+        all_enemies_dead = len(enemies) == 0
+
+        # jeśli wszyscy wrogowie są martwi
+        if all_enemies_dead:
+            rooms[(room_x, room_y)]["cleared"] = True
+
+        
+        # jeśli gracz dotknie krawędzi
+        exit_side = player_touching_exit(player)
+
+        if all_enemies_dead and exit_side:
+
+            teleport_player(player, exit_side)
+            next_room = get_next_room_position(
+                room_x,
+                room_y,
+                exit_side
+            )
+
+            # stary pokój
+            if next_room in rooms:
+
+                room_x, room_y = next_room
+
+                room_data = rooms[next_room]
+
+                current_background = room_data["background"]
+
+                # cleared = brak enemy
+                if room_data["cleared"]:
+                    enemies = []
+
+                else:
+                    enemy_count = min(5 + num_of_lvl, 20)
+                    enemies = spawn_enemies(enemy_count, player)
+
+                player.safe_timer = FPS/2
+
+            #nowy pokój
+            else:
+
+                num_of_lvl += 1
+
+                # losowe tło
+                room_background = choice(backgrounds)
+
+                # dane pokoju
+                rooms[next_room] = {
+                    "cleared": False,
+                    "power": False,
+                    "background": room_background
+                }
+
+                room_x, room_y = next_room
+
+                room_data = rooms[next_room]
+
+                # power room
+                if exit_side == "top" and randint(1, 100) <= 20:
+
+                    room_data["power"] = True
+                    room_data["background"] = power_room_background
+
+                    current_background = power_room_background
+
+                    enemies = []
+
+                # normal room
+                else:
+
+                    current_background = room_data["background"]
+
+                    enemy_count = min(5 + num_of_lvl, 20)
+
+                    enemies = spawn_enemies(
+                        enemy_count,
+                        player
+                    )
+
+                player.safe_timer = FPS
+                continue
+
+            room_x, room_y = next_room
+
+            if next_room in rooms:
+
+                room_x, room_y = next_room
+
+                room_data = rooms[next_room]
+
+                current_background = room_data["background"]
+
+                # cleared room = brak enemy
+                if room_data["cleared"]:
+                    enemies = []
+
+                else:
+                    enemy_count = min(5 + num_of_lvl, 20)
+                    enemies = spawn_enemies(enemy_count, player)
+
+                player.safe_timer = FPS
+
+                continue
+
+            num_of_lvl += 1
+            print("LEVEL:", num_of_lvl)
+
+            # Power room
+            if exit_side == "top":
+
+                # 20% szans
+                if randint(1, 100) <= 20:
+
+                    print("POWER ROOM")
+                    rooms[next_room]["power"] = True
+                    rooms[next_room]["background"] = power_room_background
+
+                    current_background = power_room_background
+                    
+                    enemies = []
+
+                else:
+
+                    current_background = rooms[next_room]["background"]
+                    enemy_count = min(5 + num_of_lvl, 20)
+                    enemies = spawn_enemies(enemy_count, player)
+
+            else:
+
+                current_background = rooms[next_room]["background"]
+                enemy_count = min(5 + num_of_lvl, 20)
+                enemies = spawn_enemies(enemy_count, player)
+
+            # safe second
+            player.safe_timer = FPS
+
+        window.blit(current_background, (0, 0))
+
+        # ===== EFEKTY / TRAILS =====
+
+        # delikatne wygaszanie poprzedniej klatki
+        fade = pygame.Surface(
+            (WINDOW_WIDTH, WINDOW_HEIGHT),
+            pygame.SRCALPHA
+        )
+
+        fade.fill((0, 0, 0, 40))
+
+        effect_surface.blit(fade, (0, 0))
+
+        # render efektów
+        window.blit(
+            effect_surface,
+            (0, 0),
+            special_flags=pygame.BLEND_RGBA_ADD
+        )
+
+        # rysuje wrogów
+        for enemy in enemies:
+            enemy.draw(window)
+        # rysuje slashe
+        for slash in slashes:
+            slash.draw(window)
+        # rysuje pociski
+        for bullet in bullets:
+            bullet.draw(window)
+
+        player.draw(window)
+
+        draw_minimap(window, rooms, (room_x, room_y)) 
+
+        # ===== GAMMA =====
+
+        brightness = settings["gamma"]
+
+        if brightness != 1.0:
+
+            gamma_surface = pygame.Surface(
+                (WINDOW_WIDTH, WINDOW_HEIGHT),
+                pygame.SRCALPHA
+            )
+
+            # rozjaśnianie
+            if brightness > 1:
+
+                alpha = int((brightness - 1) * 120)
+
+                gamma_surface.fill(
+                    (255, 255, 255, alpha)
+                )
+
+                window.blit(
+                    gamma_surface,
+                    (0, 0),
+                    special_flags=pygame.BLEND_RGBA_ADD
+                )
+
+            # przyciemnianie
+            else:
+
+                alpha = int((1 - brightness) * 180)
+
+                gamma_surface.fill(
+                    (0, 0, 0, alpha)
+                )
+
+                window.blit(gamma_surface, (0, 0))
+        
+        # Aktualizacja ekranu
+        pygame.display.update()
+
+    pygame.quit()
+    sys.exit()
+
+
+if __name__ == "__main__":
+
+    main_menu()
+
+    main()

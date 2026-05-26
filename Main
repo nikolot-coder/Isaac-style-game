@@ -20,6 +20,15 @@ SETTINGS_FILE = "settings.json"
 SAVE_FILE = "savegame.json"
 settings = {"language": "English", "gamma": 1.0, "window_scale": 1.0, "music_volume": 0.5, "sfx_volume": 0.5, "dev_keys_enabled": False}
 
+EDITABLE_CREDITS = [
+    "Indiaan Jones",
+    "Boss defeated",
+    "Coding: Nikolot, Adam"
+    "Grafics: Roxy"
+    "Music: Jachii"
+    
+]
+
 def load_sound(rel):
     if not pygame.mixer.get_init():
         return None
@@ -85,7 +94,7 @@ LANG = {
         "PAUSED": "PAUSED",
         "RESUME": "ESC — Resume",
         "QUIT_MENU": "Q — Quit to menu",
-        "INVENTORY": "Iinventory",
+        "INVENTORY": "Inventory",
         "PRESS_E": "Press E to pick up",
         "RELOADING": "Reloading",
         "SYNERGY": "Synergy",
@@ -229,7 +238,10 @@ LANG["Japanese"].update({
     "SHIFT_F6_BOSS": "Shift+F6 - 次の部屋: ボス",
     "SHIFT_F7_POWER": "Shift+F7 - 次の部屋: パワー"
 })
-BASE_CONTROL_KEYS = ["MOVE_KEYS", "MOUSE_ATTACK", "TAB_INV", "E_PICKUP", "R_RELOAD", "ESC_PAUSE"]
+LANG["English"]["SHIFT_DASH"] = "Shift - dash"
+LANG["Polski"]["SHIFT_DASH"] = "Shift - dash"
+LANG["Japanese"]["SHIFT_DASH"] = "Shift - ダッシュ"
+BASE_CONTROL_KEYS = ["MOVE_KEYS", "MOUSE_ATTACK", "SHIFT_DASH", "TAB_INV", "E_PICKUP", "R_RELOAD", "ESC_PAUSE"]
 DEV_CONTROL_KEYS = ["CTRL_DELETE_ENEMY", "SHIFT_F6_BOSS", "SHIFT_F7_POWER"]
 
 ITEM_LANG={
@@ -440,6 +452,7 @@ POWERUP_DEFS = [
     {"id": 14, "name": "Vampire Fang",   "desc": "Improves healing-on-kill and close combat. Works especially well with Blood Pact.", "color": (150, 20, 70)},
     {"id": 15, "name": "Storm Coil",     "desc": "Charges your bullets with speed and extra ammo, but makes reloads take longer.", "color": (90, 255, 230)},
     {"id": 16, "name": "Guardian Shell", "desc": "Adds heavy protection and a full heal, but slows movement. A sturdy defensive cornerstone.", "color": (80, 170, 120)},
+    {"id": 17, "name": "Dash Core", "desc": "Reduces dash cooldown and adds 10px to dash distance. Stacks with itself.", "color": (255, 120, 80)},
 ]
 
 def synergy_wind_force(p):
@@ -513,6 +526,10 @@ def synergy_legend_void_ascension(p):
     p.heal_on_kill = True
     p.heal_on_kill_amount = max(p.heal_on_kill_amount, 3)
 
+def synergy_dash_magazine(p):
+    p.max_dash_charges += 1
+    p.dash_charges = p.max_dash_charges
+
 SYNERGIES = {
     ("Swift Boots", "Eagle Eye"): {
         "name": "Wind Force",
@@ -543,6 +560,11 @@ SYNERGIES = {
         "name": "Crimson Engine",
         "effect": "Your healing-on-kill becomes stronger and your close-range damage improves.",
         "apply": synergy_crimson_engine
+    },
+    ("Big Clip", "Dash Core"): {
+        "name": "Kinetic Magazine",
+        "effect": "Adds one extra dash charge, letting movement builds reposition more safely.",
+        "apply": synergy_dash_magazine
     },
     ("Glass Cannon", "Greed Sigil", "Blood Pact"): {
         "name": "APOCALYPSE CORE",
@@ -606,7 +628,8 @@ class PowerupItem:
     def __init__(self, x, y, powerup_def):
         self.x = x; self.y = y
         self.defn = powerup_def
-        self.rect = pygame.Rect(x-24, y-24, 48, 48)
+        size=scaled(48)
+        self.rect = pygame.Rect(x-size//2, y-size//2, size, size)
         self.bob_timer = randint(0, 628)
         self.alive = True
 
@@ -616,7 +639,7 @@ class PowerupItem:
     def near_player(self, player):
         cx = player.x + player.width//2
         cy = player.y + player.height//2
-        return ((cx-self.x)**2 + (cy-self.y)**2)**0.5 < self.PICKUP_RADIUS
+        return ((cx-self.x)**2 + (cy-self.y)**2)**0.5 < scaled(self.PICKUP_RADIUS)
 
     def apply(self, player):
         pid = self.defn["id"]
@@ -633,6 +656,7 @@ class PowerupItem:
             player.speed *= 0.95
         elif pid == 3:
             player.extra_shot = True
+            player.extra_shots += 1
             player.reload_duration += 5
         elif pid == 4:
             player.invincibility_frames += 35
@@ -691,13 +715,18 @@ class PowerupItem:
             player.hp = player.max_hp
             player.invincibility_frames += 25
             player.speed *= 0.85
+        elif pid == 17:
+            player.dash_cooldown_max = max(18, player.dash_cooldown_max - 10)
+            player.dash_distance += scaled(10)
         self.alive = False
 
     def draw(self, surface, font_small, font_desc):
-        bob = math.sin(self.bob_timer * 0.04) * 5
+        size=scaled(48)
+        bob = math.sin(self.bob_timer * 0.04) * scaled(5)
         draw_y = int(self.y + bob)
-        surface.blit(POWERUP_IMAGES[self.defn["id"]], (self.x-24, draw_y-24))
-        pygame.draw.ellipse(surface, (80,60,100), (self.x-18, draw_y+22, 36, 10))
+        img=pygame.transform.scale(POWERUP_IMAGES[self.defn["id"]], (size,size))
+        surface.blit(img, (self.x-size//2, draw_y-size//2))
+        pygame.draw.ellipse(surface, (80,60,100), (self.x-scaled(18), draw_y+scaled(22), scaled(36), scaled(10)))
 
     def draw_description(self, surface, font_name, font_desc):
         bob = math.sin(self.bob_timer * 0.04) * 5
@@ -732,7 +761,7 @@ class Enemy:
         self.player_style = "neutral"
         self.aggression = 1.0
         self.hp = 3; self.x = x; self.y = y
-        self.width = 40; self.height = 40; self.speed = 2
+        self.width = scaled(40); self.height = scaled(40); self.speed = scaled(2)
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
         self.move_x = 0; self.move_y = 0
         self.ai_timer = randint(20, 80)
@@ -751,26 +780,26 @@ class Enemy:
 
         if self.player_style == "ranged":
             self.aggression = 1.3
-            self.speed = 2.4
-            self.preferred_distance = 90
+            self.speed = scaled(2.4)
+            self.preferred_distance = scaled(90)
             self.state_weights = ["chase","chase","strafe_left","strafe_right","strafe_right"]
 
         elif self.player_style == "melee":
             self.aggression = 0.8
-            self.speed = 2.0
-            self.preferred_distance = 170
+            self.speed = scaled(2.0)
+            self.preferred_distance = scaled(170)
             self.state_weights = ["retreat","retreat","strafe_left","strafe_right","chase"]
 
         elif self.player_style == "kiter":
             self.aggression = 1.1
-            self.speed = 2.6
-            self.preferred_distance = 70
+            self.speed = scaled(2.6)
+            self.preferred_distance = scaled(70)
             self.state_weights = ["chase","chase","chase","chase","strafe_left","strafe_right"]
 
         else:
             self.aggression = 1.0
-            self.speed = 2.2
-            self.preferred_distance = 120
+            self.speed = scaled(2.2)
+            self.preferred_distance = scaled(120)
             self.state_weights = ["chase","chase","strafe_left","strafe_right","retreat"]
 
     def update(self, player,):
@@ -830,6 +859,8 @@ class TankEnemy(Enemy):
         dist = max(math.hypot(dx, dy), 1)
         self.x += (dx / dist) * self.speed
         self.y += (dy / dist) * self.speed
+        self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
+        self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
     def draw(self, surface):
         pygame.draw.rect(surface, self.color, self.rect)
@@ -869,6 +900,8 @@ class RangedEnemy(Enemy):
         if self.shoot_timer <= 0:
             self.shoot_timer = randint(110, 180)
             bullets.append(Bullet(self.x, self.y, (player.x, player.y), speed=6, owner="enemy"))
+        self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
+        self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
     def draw(self, surface):
         pygame.draw.rect(surface, self.color, self.rect)
@@ -877,28 +910,32 @@ class BossEnemy(Enemy):
     def __init__(self, x, y):
         super().__init__(x, y)
 
-        self.hp = 120
-        self.max_hp = 120
-        self.speed = 1.2
+        self.hp = 90
+        self.max_hp = 90
+        self.speed = scaled(0.95)
         self.phase = 1
         self.attack_timer = 60
-        self.bullet_speed = 5
-        self.attack_min = 40
-        self.attack_max = 80
-        self.spread = 0.25
-        self.prediction = 18
-        self.burst_count = 8
-        self.dash_distance = 90
+        self.bullet_speed = scaled(4)
+        self.attack_min = 65
+        self.attack_max = 120
+        self.spread = 0.32
+        self.prediction = 12
+        self.burst_count = 5
+        self.dash_distance = scaled(55)
+        self.dash_warning_timer = 0
+        self.pending_dash = (0,0)
+        self.trails = []
 
         try:
             self.image = pygame.image.load(img_path("Rabendix.png")).convert_alpha()
-            self.image = pygame.transform.scale(self.image, (120, 120))
+            self.image = pygame.transform.scale(self.image, (scaled(120), scaled(120)))
             self.image.fill((70, 90, 170, 255), special_flags=pygame.BLEND_RGBA_MULT)
         except:
-            self.image = pygame.Surface((120, 120))
+            self.image = pygame.Surface((scaled(120), scaled(120)))
             self.image.fill((20, 45, 130))
 
-        self.rect = pygame.Rect(self.x, self.y, 120, 120)
+        self.width=self.image.get_width(); self.height=self.image.get_height()
+        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
         self.learned = {
             "ranged": 0,
             "melee": 0,
@@ -910,6 +947,26 @@ class BossEnemy(Enemy):
         self.adapt_timer = 0
 
     def update(self, player):
+        for trail in self.trails[:]:
+            trail["alpha"] -= 18
+            if trail["alpha"] <= 0:
+                self.trails.remove(trail)
+        if self.dash_warning_timer > 0:
+            self.dash_warning_timer -= 1
+            if self.dash_warning_timer == 0:
+                dx,dy=self.pending_dash
+                length=max(math.hypot(dx,dy),1)
+                self.trails=[
+                    {"x":self.x-(dx/length)*scaled(22)*i,"y":self.y-(dy/length)*scaled(22)*i,"alpha":130-25*i}
+                    for i in range(1,4)
+                ]
+                self.x += self.pending_dash[0]
+                self.y += self.pending_dash[1]
+                self.pending_dash = (0,0)
+                self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
+                self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
+            self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+            return
         style = get_player_style(player)
         self.learned[style] += 1
         hp_ratio = self.hp / self.max_hp
@@ -962,8 +1019,8 @@ class BossEnemy(Enemy):
                     )
 
             elif attack == 2:
-                self.x += nx * self.dash_distance
-                self.y += ny * self.dash_distance
+                self.pending_dash = (nx * self.dash_distance, ny * self.dash_distance)
+                self.dash_warning_timer = 18
 
             elif attack == 3:
                 for i in range(self.burst_count):
@@ -982,10 +1039,23 @@ class BossEnemy(Enemy):
         self.adapt_timer += 1
         if self.adapt_timer % 60 == 0:
             adapt_ai(self)
-        self.rect = pygame.Rect(self.x, self.y, 120, 120)
+        self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
+        self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
+        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
 
     def draw(self, surface):
-        surface.blit(self.image, (self.x, self.y))
+        for trail in self.trails:
+            ghost=self.image.copy()
+            ghost.set_alpha(trail["alpha"])
+            surface.blit(ghost,(trail["x"],trail["y"]))
+        if self.dash_warning_timer > 0:
+            img=self.image.copy()
+            red=pygame.Surface(img.get_size(), pygame.SRCALPHA)
+            red.fill((255,60,60,55))
+            img.blit(red,(0,0),special_flags=pygame.BLEND_RGBA_ADD)
+            surface.blit(img, (self.x, self.y))
+        else:
+            surface.blit(self.image, (self.x, self.y))
 
 class Slash:
     def __init__(self, player, mouse_pos):
@@ -1047,7 +1117,7 @@ class Slash:
 
 class Bullet:
     def __init__(self, x, y, mouse_pos, speed=10, owner="player"):
-        self.x=x; self.y=y; self.radius=6; self.speed=speed; self.damage=2; self.owner=owner
+        self.x=x; self.y=y; self.radius=scaled(6); self.speed=speed; self.damage=2; self.owner=owner
         mx,my=mouse_pos; dx=mx-x; dy=my-y
         length=max((dx**2+dy**2)**0.5,1)
         self.dir_x=dx/length; self.dir_y=dy/length; self.alive=True; self.hit_wall=False
@@ -1093,16 +1163,23 @@ class Player:
         self.reloading=False; self.reload_timer=0; self.reload_duration=180
         self.attack_cooldown=0; self.max_hp=6; self.hp=self.max_hp
         self.safe_timer=0; self.invincibility_frames=60
-        self.x=x; self.y=y; self.speed=3
+        self.x=x; self.y=y; self.speed=scaled(3)
         self.prev_x=x; self.prev_y=y; self.vel_x=0; self.vel_y=0
-        self.bullet_speed=10
-        self.extra_shot=False          # ← Extra Shot powerup flag
-        self.slash_range=90; self.slash_damage=1
+        self.bullet_speed=scaled(10)
+        self.extra_shot=False
+        self.extra_shots=0
+        self.slash_range=scaled(90); self.slash_damage=1
+        self.dash_distance=scaled(95)
+        self.dash_cooldown_max=55
+        self.dash_cooldown=0
+        self.max_dash_charges=1
+        self.dash_charges=1
+        self.trails=[]
         try:
             img = pygame.image.load(img_path(".vscode/Images/postac.png")).convert_alpha()
-            self.image = pygame.transform.scale(img,(48,64))
+            self.image = pygame.transform.scale(img,(scaled(48),scaled(64)))
         except:
-            self.image = pygame.Surface((48,64)); self.image.fill((255,0,0))
+            self.image = pygame.Surface((scaled(48),scaled(64))); self.image.fill((255,0,0))
         self.width=self.image.get_width(); self.height=self.image.get_height()
         self.hitbox=pygame.Rect(self.x,self.y,self.width,self.height)
 
@@ -1123,6 +1200,14 @@ class Player:
         self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
 
     def update(self):
+        for trail in self.trails[:]:
+            trail["alpha"] -= 22
+            if trail["alpha"] <= 0:
+                self.trails.remove(trail)
+        if self.dash_cooldown>0:
+            self.dash_cooldown-=1
+            if self.dash_cooldown==0:
+                self.dash_charges=self.max_dash_charges
         self.vel_x=self.x-self.prev_x
         self.vel_y=self.y-self.prev_y
         self.prev_x=self.x
@@ -1139,8 +1224,32 @@ class Player:
             self.speed = max(2, self.speed + choice([-1, 1, 2, -2]))
 
     def draw(self, surface):
+        for trail in self.trails:
+            ghost=self.image.copy()
+            ghost.set_alpha(trail["alpha"])
+            surface.blit(ghost,(trail["x"],trail["y"]))
         if self.safe_timer>0 and (self.safe_timer//5)%2==0: return
         surface.blit(self.image,(self.x,self.y))
+
+    def dash(self, keys):
+        if self.dash_charges<=0:
+            return
+        dx = (1 if keys[pygame.K_d] else 0) - (1 if keys[pygame.K_a] else 0)
+        dy = (1 if keys[pygame.K_s] else 0) - (1 if keys[pygame.K_w] else 0)
+        if dx==0 and dy==0:
+            dx = 1 if self.vel_x>=0 else -1
+        length=max(math.hypot(dx,dy),1)
+        self.trails=[
+            {"x":self.x-(dx/length)*scaled(18)*i,"y":self.y-(dy/length)*scaled(18)*i,"alpha":120-25*i}
+            for i in range(1,4)
+        ]
+        self.x+=dx/length*self.dash_distance
+        self.y+=dy/length*self.dash_distance
+        self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
+        self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
+        self.dash_charges-=1
+        if self.dash_cooldown<=0:
+            self.dash_cooldown=self.dash_cooldown_max
 
     def draw_hitbox(self, surface):
         pygame.draw.rect(surface,(0,255,0),self.hitbox,2)
@@ -1374,15 +1483,15 @@ def draw_inventory(surface, player, font):
     hovered_desc = None
 
     header = item_font.render(tr("POWERUPS"), True, (200,255,220))
-    overlay.blit(header, (left, top - scaled(38)))
+    overlay.blit(header, (left, top + 20 - scaled(38)))
     for i,item in enumerate(player.items):
-        rect = pygame.Rect(left, top + i*row_h, col_w, row_h - scaled(6))
+        rect = pygame.Rect(left, top + i*row_h + 20, col_w, row_h - scaled(6))
         hovered = rect.collidepoint(mouse)
         pygame.draw.rect(overlay, (45,65,60,230) if hovered else (25,35,35,190), rect, border_radius=scaled(6))
         pygame.draw.rect(overlay, (120,220,180), rect, max(1, scaled(1)), border_radius=scaled(6))
         name, fallback_desc = tr_item(item)
         txt=item_font.render(name,True,(230,255,235))
-        overlay.blit(txt, (rect.x+scaled(12), rect.y+scaled(7)))
+        overlay.blit(txt, (rect.x+scaled(12), rect.y+scaled(7)-10))
         if hovered:
             item_def = get_powerup_def(item)
             hovered_title = name
@@ -1390,14 +1499,14 @@ def draw_inventory(surface, player, font):
 
     right = left + col_w + scaled(60)
     header = item_font.render(tr("SYNERGIES"), True, (255,220,140))
-    overlay.blit(header, (right, top - scaled(38)))
+    overlay.blit(header, (right, top + 20 - scaled(38)))
     for i,s in enumerate(sorted(player.synergy_buffs)):
-        rect = pygame.Rect(right, top + i*row_h, col_w, row_h - scaled(6))
+        rect = pygame.Rect(right, top + i*row_h + 20, col_w, row_h - scaled(6))
         hovered = rect.collidepoint(mouse)
         pygame.draw.rect(overlay, (80,55,25,230) if hovered else (45,35,20,190), rect, border_radius=scaled(6))
         pygame.draw.rect(overlay, (255,200,120), rect, max(1, scaled(1)), border_radius=scaled(6))
         txt=item_font.render(s,True,(255,230,160))
-        overlay.blit(txt, (rect.x+scaled(12), rect.y+scaled(7)))
+        overlay.blit(txt, (rect.x+scaled(12), rect.y+scaled(7)-10))
         if hovered:
             hovered_title = s
             hovered_desc = get_synergy_desc(s)
@@ -1413,6 +1522,20 @@ def draw_inventory(surface, player, font):
             overlay.blit(line_surf, (panel.x+scaled(18), panel.y+scaled(55)+i*scaled(24)))
 
     surface.blit(overlay, (0,0))
+
+def draw_credits(surface):
+    surface.fill((5,5,10))
+    title_font=get_font(scaled(58), True)
+    text_font=get_font(scaled(28))
+    y=scaled(120)
+    for i,line in enumerate(EDITABLE_CREDITS):
+        font=title_font if i==0 else text_font
+        color=(255,230,160) if i==0 else (230,230,240)
+        surf=font.render(line, True, color)
+        surface.blit(surf,(WINDOW_WIDTH//2-surf.get_width()//2,y))
+        y+=scaled(58 if i==0 else 40)
+    hint=text_font.render("SPACE / ESC", True, (160,160,170))
+    surface.blit(hint,(WINDOW_WIDTH//2-hint.get_width()//2,WINDOW_HEIGHT-scaled(90)))
 
 def save_settings():
     with open(SETTINGS_FILE,"w") as f: json.dump(settings,f)
@@ -1561,6 +1684,9 @@ def settings_menu():
                 pygame.quit()
                 sys.exit()
             if ev.type==pygame.KEYDOWN:
+                if ev.key==pygame.K_ESCAPE:
+                    save_settings()
+                    return
                 if ev.key==pygame.K_UP:selected=(selected-1)%len(options)
                 if ev.key==pygame.K_DOWN:selected=(selected+1)%len(options)
                 current=options[selected]
@@ -1668,7 +1794,7 @@ def settings_menu():
                 value_text=font.render(tr("ON") if enabled else tr("OFF"),True,(127,255,212) if enabled else (220,160,160))
                 window.blit(value_text,(rect.right-value_text.get_width()-scaled(20),rect.y+scaled(12)))
             elif option["type"]=="button":
-                txt=font.render("ENTER",True,(255,200,120))
+                txt=font.render("ESC",True,(255,20,20))
                 window.blit(txt,(rect.right-txt.get_width()-scaled(20),rect.y+scaled(12)))
         draw_settings_controls(window)
         pygame.display.update()
@@ -1721,31 +1847,31 @@ def adapt_ai(self):
     dominant = max(self.learned, key=self.learned.get)
 
     if dominant == "ranged":
-        self.speed = min(3.0, self.speed + 0.25)
-        self.attack_min = max(20, self.attack_min - 4)
-        self.attack_max = max(40, self.attack_max - 5)
-        self.bullet_speed = min(8, self.bullet_speed + 0.35)
+        self.speed = min(scaled(2.1), self.speed + scaled(0.12))
+        self.attack_min = max(45, self.attack_min - 2)
+        self.attack_max = max(75, self.attack_max - 3)
+        self.bullet_speed = min(scaled(5.5), self.bullet_speed + scaled(0.15))
         self.spread = max(0.12, self.spread - 0.02)
         self.prediction = min(32, self.prediction + 2)
 
     elif dominant == "melee":
         self.speed = max(0.8, self.speed - 0.1)
         self.hp += 5  # tankowanie
-        self.dash_distance = min(150, self.dash_distance + 8)
-        self.attack_min = max(24, self.attack_min - 2)
-        self.burst_count = min(12, self.burst_count + 1)
+        self.dash_distance = min(scaled(85), self.dash_distance + scaled(3))
+        self.attack_min = max(50, self.attack_min - 1)
+        self.burst_count = min(7, self.burst_count + 1)
 
     elif dominant == "kiter":
-        self.speed = min(3.4, self.speed + 0.35)
+        self.speed = min(scaled(2.3), self.speed + scaled(0.15))
         self.phase = 2  # bardziej agresywny chase
-        self.dash_distance = min(170, self.dash_distance + 10)
+        self.dash_distance = min(scaled(90), self.dash_distance + scaled(4))
         self.prediction = min(36, self.prediction + 3)
         self.attack_max = max(38, self.attack_max - 4)
 
     elif dominant == "balanced":
-        self.speed = min(2.8, self.speed * 1.04)
-        self.bullet_speed = min(7, self.bullet_speed + 0.2)
-        self.attack_min = max(25, self.attack_min - 2)
+        self.speed = min(scaled(2.0), self.speed * 1.02)
+        self.bullet_speed = min(scaled(5.2), self.bullet_speed + scaled(0.1))
+        self.attack_min = max(50, self.attack_min - 1)
 
 def main(load_saved=False):
     global effect_surface, show_inventory, room_intro_active, room_intro_timer, room_intro_text, room_intro_boss, room_intro_last_char
@@ -1773,7 +1899,7 @@ def main(load_saved=False):
     rooms={(0,0):{"cleared":True,"power":False,"background":cur_bg,"enemies":[],"powerups":[]}}
     if (room_x,room_y)!=(0,0):
         rooms[(room_x,room_y)]={"cleared":True,"power":False,"background":cur_bg,"enemies":[],"powerups":[]}
-    paused=False; show_hitboxes=False; shift_held=False; entry_side=None; forced_next_room=None
+    paused=False; show_hitboxes=False; shift_held=False; entry_side=None; forced_next_room=None; credits_active=False
 
     while True:
         font=get_font(30)
@@ -1781,6 +1907,15 @@ def main(load_saved=False):
         fdesc=get_font(18)
         clock.tick(FPS)
         e_pressed=False
+        if credits_active:
+            for ev in pygame.event.get():
+                if ev.type==pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                if ev.type==pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_ESCAPE):
+                    return
+            draw_credits(window)
+            pygame.display.update()
+            continue
         if room_intro_active:
             for ev in pygame.event.get():
                 if ev.type==pygame.QUIT:
@@ -1796,7 +1931,10 @@ def main(load_saved=False):
         for ev in pygame.event.get():
             if ev.type==pygame.QUIT: pygame.quit(); sys.exit()
             if ev.type==pygame.KEYDOWN:
-                if ev.key in (pygame.K_LSHIFT,pygame.K_RSHIFT): shift_held=True
+                if ev.key in (pygame.K_LSHIFT,pygame.K_RSHIFT):
+                    shift_held=True
+                    if not paused and not show_inventory:
+                        player.dash(pygame.key.get_pressed())
                 if ev.type == pygame.KEYDOWN:
                         if ev.key == pygame.K_TAB:
                             show_inventory = not show_inventory
@@ -1831,9 +1969,11 @@ def main(load_saved=False):
                             player.stats["shoots"] += 1
                             play_sound("shoot")
                             # extra shot: second bullet at +12° offset, costs 1 extra ammo
-                            if player.extra_shot and player.ammo>1:
+                            extra_to_fire=min(player.extra_shots, player.ammo-1)
+                            for extra_i in range(extra_to_fire):
                                 dx=mp[0]-cx; dy=mp[1]-cy
-                                ang=math.atan2(dy,dx)+math.radians(12)
+                                offset=(extra_i//2+1)*12*(1 if extra_i%2==0 else -1)
+                                ang=math.atan2(dy,dx)+math.radians(offset)
                                 op=(cx+math.cos(ang)*200, cy+math.sin(ang)*200)
                                 bullets.append(Bullet(cx,cy,op,player.bullet_speed, owner="player"))
                                 player.ammo-=1
@@ -1880,6 +2020,8 @@ def main(load_saved=False):
                     slash.hit_enemies[id(enemy)]=10; enemy.hp-=slash.damage
                     play_sound("hit")
                     if enemy.hp <= 0:
+                        if isinstance(enemy, BossEnemy):
+                            credits_active=True
                         on_enemy_killed(player)
                         room_enemy_progress += 1
                         if player.greed and randint(1, 100) < 20:
@@ -1905,6 +2047,8 @@ def main(load_saved=False):
                         play_sound("hit")
                         bullet.alive = False
                         if enemy.hp <= 0:
+                            if isinstance(enemy, BossEnemy):
+                                credits_active=True
                             on_enemy_killed(player)
                             enemies.remove(enemy)
                         break
@@ -1996,6 +2140,7 @@ def main(load_saved=False):
 
         if player.hp<=0:
             play_sound("die")
+            delete_save()
             return
 
         window.blit(cur_bg,(0,0))

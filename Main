@@ -1,10 +1,7 @@
 import pygame
 from random import randint, choice, sample
-import sys
-import math
-import json
-import os
-import ctypes
+from collections import Counter
+import sys, math, json, ctypes, os
 
 os.environ["SDL_VIDEO_CENTERED"] = "1"
 pygame.init()
@@ -12,6 +9,7 @@ try:
     pygame.mixer.init()
 except:
     pass
+sound_stop_queue = []
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def img_path(rel): return os.path.join(BASE_DIR, rel)
@@ -23,11 +21,20 @@ settings = {"language": "English", "gamma": 1.0, "window_scale": 1.0, "music_vol
 EDITABLE_CREDITS = [
     "Indiaan Jones",
     "Boss defeated",
-    "Coding: Nikolot, Adam"
-    "Grafics: Roxy"
-    "Music: Jachii"
-    
+    "Coding: Nikolot, Adam",
+    "Grafics: Roxy",
+    "Music: Jachii",
 ]
+
+
+
+def collide_walls(rect):
+
+    for wall in current_room_walls:
+        if rect.colliderect(wall):
+            return True
+
+    return False
 
 def load_sound(rel):
     if not pygame.mixer.get_init():
@@ -79,9 +86,21 @@ def update_sfx_volume():
 def play_sound(name):
     sound = sounds.get(name)
     if isinstance(sound, list):
-        sound = choice([item for item in sound if item] or [None])
-    if sound:
-        sound.play()
+        sound = choice(
+            [item for item in sound if item] or [None]
+        )
+    if not sound:
+        return
+    channel = sound.play()
+    if channel:
+        sound_stop_queue.append(
+            (
+                pygame.time.get_ticks()
+                + int(sound.get_length() * 500),
+                channel
+            )
+        )
+
 LANG = {
     "English": {
         "English":"English",
@@ -176,8 +195,9 @@ LANG["English"].update({
     "R_RELOAD": "R - reload",
     "ESC_PAUSE": "ESC - pause",
     "CTRL_DELETE_ENEMY": "CTRL - delete one enemy",
-    "SHIFT_F6_BOSS": "Shift+F6 - next room: boss",
-    "SHIFT_F7_POWER": "Shift+F7 - next room: power"
+    "SHIFT_F6_BOSS": "RShift+F6 - next room: boss",
+    "SHIFT_F7_POWER": "RShift+F7 - next room: power",
+    "SHIFT_F8_CREDITS": "RShift+F8 - credits"
 })
 LANG["Polski"].update({
     "START": "START",
@@ -204,8 +224,9 @@ LANG["Polski"].update({
     "R_RELOAD": "R - przeladuj",
     "ESC_PAUSE": "ESC - pauza",
     "CTRL_DELETE_ENEMY": "CTRL - usun jednego wroga",
-    "SHIFT_F6_BOSS": "Shift+F6 - nastepny pokoj: boss",
-    "SHIFT_F7_POWER": "Shift+F7 - nastepny pokoj: power"
+    "SHIFT_F6_BOSS": "RShift+F6 - nastepny pokoj: boss",
+    "SHIFT_F7_POWER": "RShift+F7 - nastepny pokoj: power",
+    "SHIFT_F8_CREDITS": "RShift+F8 - napisy końcowe"
 })
 LANG["Japanese"].update({
     "START": "スタート",
@@ -235,14 +256,15 @@ LANG["Japanese"].update({
     "R_RELOAD": "R - リロード",
     "ESC_PAUSE": "ESC - ポーズ",
     "CTRL_DELETE_ENEMY": "CTRL - 敵を1体削除",
-    "SHIFT_F6_BOSS": "Shift+F6 - 次の部屋: ボス",
-    "SHIFT_F7_POWER": "Shift+F7 - 次の部屋: パワー"
+    "SHIFT_F6_BOSS": "RShift+F6 - 次の部屋: ボス",
+    "SHIFT_F7_POWER": "RShift+F7 - 次の部屋: パワー",
+    "SHIFT_F8_CREDITS": "RShift+F8 - クレジット"
 })
-LANG["English"]["SHIFT_DASH"] = "Shift - dash"
-LANG["Polski"]["SHIFT_DASH"] = "Shift - dash"
-LANG["Japanese"]["SHIFT_DASH"] = "Shift - ダッシュ"
+LANG["English"]["SHIFT_DASH"] = "LShift - dash"
+LANG["Polski"]["SHIFT_DASH"] = "LShift - dash"
+LANG["Japanese"]["SHIFT_DASH"] = "LShift - ダッシュ"
 BASE_CONTROL_KEYS = ["MOVE_KEYS", "MOUSE_ATTACK", "SHIFT_DASH", "TAB_INV", "E_PICKUP", "R_RELOAD", "ESC_PAUSE"]
-DEV_CONTROL_KEYS = ["CTRL_DELETE_ENEMY", "SHIFT_F6_BOSS", "SHIFT_F7_POWER"]
+DEV_CONTROL_KEYS = ["CTRL_DELETE_ENEMY", "SHIFT_F6_BOSS", "SHIFT_F7_POWER", "SHIFT_F8_CREDITS"]
 
 ITEM_LANG={
     "English":{
@@ -252,7 +274,7 @@ ITEM_LANG={
         "Extra Shot":["Extra Shot","Fire an extra bullet per shot"],
         "Thick Skin":["Thick Skin","Invincibility window doubled"],
         "Quick Hands":["Quick Hands","Reload 50% faster"],
-        "Blade Master":["Blade Master","Slash range +30 and deals 2 dmg"],
+        "Blade Master":["Blade Master","Slash range +30 and deals +2 dmg"],
         "Big Clip":["Big Clip","+3 max ammo"],
         "Glass Cannon":["Glass Cannon","+80% dmg, -1 max HP"],
         "Shadow Step":["Shadow Step","Faster movement, less safe time"],
@@ -269,7 +291,7 @@ ITEM_LANG={
         "Extra Shot":["Dodatkowy Strzał","Wystrzeliwuje dodatkowy pocisk"],
         "Thick Skin":["Twarda Skóra","Dłuższa niewrażliwość"],
         "Quick Hands":["Szybkie Ręce","50% szybszy reload"],
-        "Blade Master":["Mistrz Ostrza","+30 zasięgu slasha"],
+        "Blade Master":["Mistrz Ostrza","+30 zasięgu slasha +2 dmg"],
         "Big Clip":["Duży Magazynek","+3 amunicji"],
         "Glass Cannon":["Szklana Armata","+obrażenia, -HP"],
         "Shadow Step":["Krok Cienia","Szybszy ruch"],
@@ -301,6 +323,16 @@ BASE_WINDOW_HEIGHT = 720
 WINDOW_WIDTH = BASE_WINDOW_WIDTH
 WINDOW_HEIGHT = BASE_WINDOW_HEIGHT
 FPS = 60
+global current_room_walls
+POWERROOM_LEFT_PEDESTAL = (
+    WINDOW_WIDTH // 2 + 132,
+    WINDOW_HEIGHT // 2 + 170
+)
+POWERROOM_RIGHT_PEDESTAL = (
+    WINDOW_WIDTH // 2 + 522,
+    WINDOW_HEIGHT // 2 + 170
+)
+DOOR_SAFE_DISTANCE = 120
 
 def ui_scale():
     return max(0.75, min(WINDOW_WIDTH / BASE_WINDOW_WIDTH, WINDOW_HEIGHT / BASE_WINDOW_HEIGHT))
@@ -693,7 +725,7 @@ class PowerupItem:
         elif pid == 12:
             player.max_ammo += 4
             player.bullet_damage_penalty = True
-            player.slash_damage -= 1
+            player.slash_damage /= 1
         elif pid == 13:
             player.chaos = True
             player.speed *= 1.05
@@ -826,7 +858,11 @@ class Enemy:
         spd = max((self.move_x**2+self.move_y**2)**0.5, 1)
         self.move_x = (self.move_x/spd)*min(spd,self.speed)
         self.move_y = (self.move_y/spd)*min(spd,self.speed)
-        self.x += self.move_x; self.y += self.move_y
+        old_x = self.x; old_y = self.y; self.x += self.move_x; self.y += self.move_y
+        test_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        if collide_walls(test_rect):
+            self.x = old_x
+            self.y = old_y
         if self.x < 0: self.x=0; self.move_x*=-0.5
         if self.x+self.width > WINDOW_WIDTH: self.x=WINDOW_WIDTH-self.width; self.move_x*=-0.5
         if self.y < 0: self.y=0; self.move_y*=-0.5
@@ -857,8 +893,12 @@ class TankEnemy(Enemy):
         dx = player.x - self.x
         dy = player.y - self.y
         dist = max(math.hypot(dx, dy), 1)
-        self.x += (dx / dist) * self.speed
+        old_x = self.x; old_y = self.y; self.x += (dx / dist) * self.speed
         self.y += (dy / dist) * self.speed
+        test_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        if collide_walls(test_rect):
+            self.x = old_x
+            self.y = old_y
         self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
         self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
@@ -890,12 +930,17 @@ class RangedEnemy(Enemy):
         dy = player.y - self.y
         dist = max(math.hypot(dx, dy), 1)
         nx, ny = dx / dist, dy / dist
+        old_x = self.x; old_y = self.y
         if dist < 250:
             self.x -= nx * self.speed
             self.y -= ny * self.speed
         elif dist > 350:
             self.x += nx * self.speed
             self.y += ny * self.speed
+        test_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        if collide_walls(test_rect):
+            self.x = old_x
+            self.y = old_y
         self.shoot_timer -= 1
         if self.shoot_timer <= 0:
             self.shoot_timer = randint(110, 180)
@@ -905,7 +950,7 @@ class RangedEnemy(Enemy):
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
     def draw(self, surface):
         pygame.draw.rect(surface, self.color, self.rect)
-
+BOSS_CHANCE = 10
 class BossEnemy(Enemy):
     def __init__(self, x, y):
         super().__init__(x, y)
@@ -916,7 +961,7 @@ class BossEnemy(Enemy):
         self.phase = 1
         self.attack_timer = 60
         self.bullet_speed = scaled(4)
-        self.attack_min = 65
+        self.attack_min = 50
         self.attack_max = 120
         self.spread = 0.32
         self.prediction = 12
@@ -927,7 +972,7 @@ class BossEnemy(Enemy):
         self.trails = []
 
         try:
-            self.image = pygame.image.load(img_path("Rabendix.png")).convert_alpha()
+            self.image = pygame.image.load(img_path(".vscode/Images/Rabendix.png")).convert_alpha()
             self.image = pygame.transform.scale(self.image, (scaled(120), scaled(120)))
             self.image.fill((70, 90, 170, 255), special_flags=pygame.BLEND_RGBA_MULT)
         except:
@@ -975,38 +1020,28 @@ class BossEnemy(Enemy):
             self.phase = 2
         if hp_ratio < 0.3:
             self.phase = 3
-
-        dx = player.x - self.x
-        dy = player.y - self.y
+        dx = player.x - self.x; dy = player.y - self.y
         dist = max(math.hypot(dx, dy), 1)
-
-        nx = dx / dist
-        ny = dy / dist
-
+        nx = dx / dist; ny = dy / dist
+        old_x = self.x; old_y = self.y
         if self.phase == 1:
             self.x += nx * self.speed
             self.y += ny * self.speed
-
         elif self.phase == 2:
             self.x += nx * self.speed * 0.8
             self.y += ny * self.speed * 0.8
             self.x += math.sin(pygame.time.get_ticks() * 0.01) * 2
-
         elif self.phase == 3:
             self.x += nx * 2.2
             self.y += ny * 2.2
-
         self.attack_timer -= 1
-
         if self.attack_timer <= 0:
             self.attack_timer = randint(self.attack_min, self.attack_max)
             target = (
                 player.x + player.width//2 + getattr(player, "vel_x", 0) * self.prediction,
                 player.y + player.height//2 + getattr(player, "vel_y", 0) * self.prediction
             )
-
             attack = randint(1, 3)
-
             if attack == 1:
                 for i in range(5):
                     aim_dx = target[0] - self.x
@@ -1041,6 +1076,8 @@ class BossEnemy(Enemy):
             adapt_ai(self)
         self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
         self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
+        test_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        if collide_walls(test_rect): self.x = old_x; self.y = old_y
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
 
     def draw(self, surface):
@@ -1139,6 +1176,12 @@ class Bullet:
     def draw_hitbox(self, surface):
         pygame.draw.rect(surface,(0,255,255),self.get_rect(),1)
 
+def check_wall_collision(rect, walls):
+    for wall in walls:
+        if rect.colliderect(wall):
+            return True
+    return False
+
 class Player:
     def __init__(self, x, y):
         self.stats = {
@@ -1162,44 +1205,68 @@ class Player:
         self.shoot_cooldown=0; self.max_ammo=6; self.ammo=self.max_ammo
         self.reloading=False; self.reload_timer=0; self.reload_duration=180
         self.attack_cooldown=0; self.max_hp=6; self.hp=self.max_hp
-        self.safe_timer=0; self.invincibility_frames=60
+        self.safe_timer=0; self.invincibility_frames=60; self.wall_ignore_timer = 0
         self.x=x; self.y=y; self.speed=scaled(3)
         self.prev_x=x; self.prev_y=y; self.vel_x=0; self.vel_y=0
         self.bullet_speed=scaled(10)
-        self.extra_shot=False
-        self.extra_shots=0
+        self.extra_shot=False; self.extra_shots=0
         self.slash_range=scaled(90); self.slash_damage=1
-        self.dash_distance=scaled(95)
-        self.dash_cooldown_max=55
-        self.dash_cooldown=0
-        self.max_dash_charges=1
-        self.dash_charges=1
-        self.trails=[]
+        self.dash_distance=scaled(95); self.dash_cooldown_max=55
+        self.dash_cooldown=0; self.max_dash_charges=1
+        self.dash_charges=1; self.trails=[]
         try:
             img = pygame.image.load(img_path(".vscode/Images/postac.png")).convert_alpha()
             self.image = pygame.transform.scale(img,(scaled(48),scaled(64)))
         except:
             self.image = pygame.Surface((scaled(48),scaled(64))); self.image.fill((255,0,0))
         self.width=self.image.get_width(); self.height=self.image.get_height()
-        self.hitbox=pygame.Rect(self.x,self.y,self.width,self.height)
+        self.hitbox=pygame.Rect(self.x,self.y,self.width+40,self.height)
 
     def handle_input(self, keys):
-        if keys[pygame.K_a]: 
-            self.stats["move_left"] += 1
-        if keys[pygame.K_d]: 
-            self.stats["move_right"] += 1
-        if keys[pygame.K_w]: 
+        move_x = 0
+        move_y = 0
+        if keys[pygame.K_w]:
             self.stats["move_up"] += 1
-        if keys[pygame.K_s]: 
+            move_y -= self.speed
+        if keys[pygame.K_s]:
             self.stats["move_down"] += 1
-        if keys[pygame.K_w]: self.y-=self.speed
-        if keys[pygame.K_s]: self.y+=self.speed
-        if keys[pygame.K_a]: self.x-=self.speed
-        if keys[pygame.K_d]: self.x+=self.speed
-        self.x=max(0,min(self.x,WINDOW_WIDTH-self.width))
-        self.y=max(0,min(self.y,WINDOW_HEIGHT-self.height))
+            move_y += self.speed
+        if keys[pygame.K_a]:
+            self.stats["move_left"] += 1
+            move_x -= self.speed
+        if keys[pygame.K_d]:
+            self.stats["move_right"] += 1
+            move_x += self.speed
+        self.x += move_x
+        test_rect = pygame.Rect(
+            self.x,
+            self.y,
+            self.width,
+            self.height
+        )
+        if collide_walls(test_rect):
+            self.x -= move_x
+        self.y += move_y
+        test_rect = pygame.Rect(
+            self.x,
+            self.y,
+            self.width,
+            self.height
+        )
+        if collide_walls(test_rect):
+            self.y -= move_y
+        self.x = max(
+            0,
+            min(self.x, WINDOW_WIDTH - self.width)
+        )
+        self.y = max(
+            0,
+            min(self.y, WINDOW_HEIGHT - self.height)
+        )
 
     def update(self):
+        if self.wall_ignore_timer > 0:
+            self.wall_ignore_timer -= 1
         for trail in self.trails[:]:
             trail["alpha"] -= 22
             if trail["alpha"] <= 0:
@@ -1212,7 +1279,7 @@ class Player:
         self.vel_y=self.y-self.prev_y
         self.prev_x=self.x
         self.prev_y=self.y
-        self.hitbox=pygame.Rect(self.x,self.y,self.width,self.height)
+        self.hitbox=pygame.Rect(self.x+12,self.y+12,self.width-20,self.height-26)
         if self.safe_timer>0: self.safe_timer-=1
         if self.attack_cooldown>0: self.attack_cooldown-=1
         if self.shoot_cooldown>0: self.shoot_cooldown-=1
@@ -1311,58 +1378,141 @@ def get_player_style(player):
     return "balanced"
 
 def load_backgrounds():
-    bgs=[]
-    for i in range(4):
+    backgrounds = []
+    rooms_data = [
+        ("tlo0.png", {"top":True,  "bottom":True,  "left":True,  "right":True},  False),
+        ("tlo1.png", {"top":True,  "bottom":True,  "left":False, "right":False}, True),
+        ("tlo2.png", {"top":True,  "bottom":True,  "left":False, "right":False}, False),
+        ("tlo3.png", {"top":False, "bottom":False, "left":True,  "right":True},  False),
+        ("tlo4.png", {"top":True,  "bottom":False, "left":True,  "right":False}, True),
+        ("tlo5.png", {"top":True,  "bottom":False, "left":True,  "right":False}, False),
+        ("tlo6.png", {"top":True,  "bottom":False, "left":False, "right":True},  True),
+        ("tlo7.png", {"top":True,  "bottom":False, "left":False, "right":True},  False),
+        ("tlo8.png", {"top":False, "bottom":True,  "left":False, "right":True},  False),
+        ("tlo9.png", {"top":False, "bottom":True,  "left":True,  "right":False}, False),
+        ("tlo10.png",{"top":True,  "bottom":True,  "left":True,  "right":True},  True),
+    ]
+    for filename, doors, metal in rooms_data:
         try:
-            bg=pygame.image.load(img_path(f".vscode/Images/tlo{i}.png"))
-            bgs.append(pygame.transform.scale(bg,(WINDOW_WIDTH,WINDOW_HEIGHT)))
-        except: pass
-    if not bgs:
-        bg=pygame.Surface((WINDOW_WIDTH,WINDOW_HEIGHT)); bg.fill((0,0,0)); bgs.append(bg)
-    return bgs
+            img = pygame.image.load(
+                img_path(f".vscode/Images/{filename}")
+            )
+            img = pygame.transform.scale(
+                img,
+                (WINDOW_WIDTH, WINDOW_HEIGHT)
+            )
+            backgrounds.append({
+                "image": img,
+                "doors": doors,
+                "metal": metal
+            })
+        except:
+            pass
+
+    return backgrounds
+
+def opposite_side(side):
+
+    return {
+        "top": "bottom",
+        "bottom": "top",
+        "left": "right",
+        "right": "left"
+    }[side]
 
 def player_touching_exit(player):
+
     cx = player.x + player.width // 2
     cy = player.y + player.height // 2
-    door_size = 200
-    half_door = door_size // 2
     center_x = WINDOW_WIDTH // 2
     center_y = WINDOW_HEIGHT // 2
-    if center_x - half_door <= cx <= center_x + half_door:
+    top_bottom_size = 320
+    side_size = 240
+    if (
+        center_x - top_bottom_size // 2
+        <= cx
+        <= center_x + top_bottom_size // 2
+    ):
         if cy <= 48:
             return "top"
+    if (
+        center_x - top_bottom_size // 2
+        <= cx
+        <= center_x + top_bottom_size // 2
+    ):
         if cy >= WINDOW_HEIGHT - 48:
             return "bottom"
-    if center_y - half_door <= cy <= center_y + half_door:
+    if (
+        center_y - side_size // 2
+        <= cy
+        <= center_y + side_size // 2
+    ):
         if cx <= 48:
             return "left"
+    if (
+        center_y - side_size // 2
+        <= cy
+        <= center_y + side_size // 2
+    ):
         if cx >= WINDOW_WIDTH - 48:
             return "right"
     return None
 
 def spawn_enemies(count, player, room_level=0):
+
     enemies = []
+
     for _ in range(count):
-        while True:
-            x = randint(50, WINDOW_WIDTH - 50)
-            y = randint(50, WINDOW_HEIGHT - 50)
-            if ((x - player.x) ** 2 + (y - player.y) ** 2) ** 0.5 > 250:
-                roll = randint(1, 100)
-                if roll < 20:
-                    e = TankEnemy(x, y, room_level)
-                elif roll < 45:
-                    e = RangedEnemy(x, y, room_level)
-                else:
-                    e = Enemy(x, y)
-                enemies.append(e)
-                break
+        attempts = 0
+        while attempts < 100:
+            attempts += 1
+            x = randint(100, WINDOW_WIDTH - 100)
+            y = randint(100, WINDOW_HEIGHT - 100)
+            if math.hypot(x - player.x, y - player.y) < 250:
+                continue
+            enemy_rect = pygame.Rect(x, y, 64, 64)
+            center_x = WINDOW_WIDTH // 2; center_y = WINDOW_HEIGHT // 2
+           
+            if abs(x - center_x) < 180 and y < 140:
+                continue
+            if abs(x - center_x) < 180 and y > WINDOW_HEIGHT - 140:
+                continue
+            if abs(y - center_y) < 180 and x < 140:
+                continue
+            if abs(y - center_y) < 180 and x > WINDOW_WIDTH - 140:
+                continue
+            if collide_walls(enemy_rect):
+                continue
+            overlap = False
+            for e in enemies:
+                if enemy_rect.colliderect(e.rect):
+                    overlap = True
+                    break
+            if overlap:
+                continue
+            roll = randint(1, 100)
+            if roll < 20:
+                e = TankEnemy(x, y, room_level)
+            elif roll < 45:
+                e = RangedEnemy(x, y, room_level)
+            else:
+                e = Enemy(x, y)
+            bonus_hp = room_level // 2
+            if hasattr(e, "hp"):
+                e.hp += bonus_hp
+            if hasattr(e, "max_hp"):
+                e.max_hp += bonus_hp
+            else:
+                e.max_hp = e.hp
+            enemies.append(e)
+            break
     return enemies
 
-BOSS_CHANCE = 10
-BOSS_ROOM_BG = "bossroom0.png"
 
-def should_spawn_boss():
-    return randint(1, 100) <= BOSS_CHANCE
+def should_spawn_boss(entry_side):
+    if entry_side != "top":
+        return False
+    return randint(1,100) <= BOSS_CHANCE
 
 def on_enemy_killed(player):
     player.kill_count += 1
@@ -1375,20 +1525,56 @@ def on_enemy_killed(player):
         if randint(1, 100) < 20:
             player.hp = max(1, player.hp - 1)
 
-def spawn_powerup_items():
-    chosen = sample(POWERUP_DEFS, 2)
-    cx=WINDOW_WIDTH//2; cy=WINDOW_HEIGHT//2
-    return [PowerupItem(cx-100, cy, chosen[0]), PowerupItem(cx+100, cy, chosen[1])]
+def spawn_powerup_items(player):
+    available = []
+    for powerup in POWERUP_DEFS:
+        name = powerup["name"]
+        if name == "Blood Pact" and "Blood Pact" in player.items:
+            continue
+        if name == "Vampire Fangs" and "Blood Pact" not in player.items:
+            continue
+        available.append(powerup)
+    if len(available) < 2:
+        available = POWERUP_DEFS[:]
+    chosen = sample(available, 2)
+    return [
+        PowerupItem(
+            POWERROOM_LEFT_PEDESTAL[0],
+            POWERROOM_LEFT_PEDESTAL[1],
+            chosen[0]
+        ),
+        PowerupItem(
+            POWERROOM_RIGHT_PEDESTAL[0],
+            POWERROOM_RIGHT_PEDESTAL[1],
+            chosen[1]
+        )
+    ]
 
 def get_next_room_position(rx,ry,side):
     return {"top":(rx,ry-1),"bottom":(rx,ry+1),"left":(rx-1,ry),"right":(rx+1,ry)}.get(side,(rx,ry))
 
 def teleport_player(player, side):
-    margin=32
-    if side=="top":     player.y=WINDOW_HEIGHT-player.height-margin-5
-    elif side=="bottom":player.y=margin+5
-    elif side=="left":  player.x=WINDOW_WIDTH-player.width-margin-5
-    elif side=="right": player.x=margin+5
+
+    DOOR_X = WINDOW_WIDTH // 2
+    DOOR_Y = WINDOW_HEIGHT // 2
+    if side == "top":
+        player.x = DOOR_X - player.width // 2
+        player.y = WINDOW_HEIGHT - 140
+    elif side == "bottom":
+        player.x = DOOR_X - player.width // 2
+        player.y = 140
+    elif side == "left":
+        player.x = WINDOW_WIDTH - 140
+        player.y = DOOR_Y - player.height // 2
+    elif side == "right":
+        player.x = 140
+        player.y = DOOR_Y - player.height // 2
+    player.hitbox = pygame.Rect(
+        player.x,
+        player.y,
+        player.width,
+        player.height
+    )
 
 def boss_spawn_position(entry_side):
     margin = 120
@@ -1484,17 +1670,29 @@ def draw_inventory(surface, player, font):
 
     header = item_font.render(tr("POWERUPS"), True, (200,255,220))
     overlay.blit(header, (left, top + 20 - scaled(38)))
-    for i,item in enumerate(player.items):
-        rect = pygame.Rect(left, top + i*row_h + 20, col_w, row_h - scaled(6))
+    counts = Counter(player.items)
+
+    for i, (item, amount) in enumerate(counts.items()):
+        rect = pygame.Rect(left, top + i * row_h + 20, col_w, row_h - scaled(6))
         hovered = rect.collidepoint(mouse)
         pygame.draw.rect(overlay, (45,65,60,230) if hovered else (25,35,35,190), rect, border_radius=scaled(6))
-        pygame.draw.rect(overlay, (120,220,180), rect, max(1, scaled(1)), border_radius=scaled(6))
+        pygame.draw.rect( overlay, (120,220,180), rect, max(1, scaled(1)), border_radius=scaled(6))
         name, fallback_desc = tr_item(item)
-        txt=item_font.render(name,True,(230,255,235))
-        overlay.blit(txt, (rect.x+scaled(12), rect.y+scaled(7)-10))
+        display_name = name
+        if amount > 1:
+            display_name = f"{name} x{amount}"
+        txt = item_font.render(
+            display_name,
+            True,
+            (230,255,235)
+        )
+        overlay.blit(
+            txt,
+            (rect.x + scaled(12), rect.y + scaled(7) - 10)
+        )
         if hovered:
             item_def = get_powerup_def(item)
-            hovered_title = name
+            hovered_title = display_name
             hovered_desc = item_def["desc"] if item_def else fallback_desc
 
     right = left + col_w + scaled(60)
@@ -1849,7 +2047,7 @@ def adapt_ai(self):
     if dominant == "ranged":
         self.speed = min(scaled(2.1), self.speed + scaled(0.12))
         self.attack_min = max(45, self.attack_min - 2)
-        self.attack_max = max(75, self.attack_max - 3)
+        self.attack_max = max(50, self.attack_max - 3)
         self.bullet_speed = min(scaled(5.5), self.bullet_speed + scaled(0.15))
         self.spread = max(0.12, self.spread - 0.02)
         self.prediction = min(32, self.prediction + 2)
@@ -1866,12 +2064,59 @@ def adapt_ai(self):
         self.phase = 2  # bardziej agresywny chase
         self.dash_distance = min(scaled(90), self.dash_distance + scaled(4))
         self.prediction = min(36, self.prediction + 3)
-        self.attack_max = max(38, self.attack_max - 4)
+        self.attack_max = max(50, self.attack_max - 4)
 
     elif dominant == "balanced":
         self.speed = min(scaled(2.0), self.speed * 1.02)
         self.bullet_speed = min(scaled(5.2), self.bullet_speed + scaled(0.1))
         self.attack_min = max(50, self.attack_min - 1)
+
+current_room_walls = []
+
+def build_room_walls(doors, is_boss=False):
+    walls = []
+    door_size = 200
+    half = door_size // 2
+    cx = WINDOW_WIDTH // 2
+    cy = WINDOW_HEIGHT // 2
+    thick = 74
+    if is_boss:
+        doors = {"top": True, "bottom": True, "left": True, "right": True}
+    top_thick = thick + 10 if is_boss else thick
+    if doors["top"]:
+        walls.append(
+            pygame.Rect(0, 0,cx - half, top_thick))
+        walls.append(
+            pygame.Rect(cx + half,0, WINDOW_WIDTH - (cx + half), top_thick))
+    else:
+        walls.append(
+            pygame.Rect(0, 0, WINDOW_WIDTH, top_thick))
+    if not is_boss:
+        if doors["bottom"]:
+            walls.append(
+                pygame.Rect(0,WINDOW_HEIGHT - thick, cx - half, thick))
+            walls.append(
+                pygame.Rect(cx + half, WINDOW_HEIGHT - thick, WINDOW_WIDTH - (cx + half), thick))
+        else:
+            walls.append(
+                pygame.Rect(0, WINDOW_HEIGHT - thick, WINDOW_WIDTH, thick))
+    if doors["left"]:
+        walls.append(
+            pygame.Rect(0, 0, thick, cy - half))
+        walls.append(
+            pygame.Rect(0, cy + half, thick, WINDOW_HEIGHT - (cy + half)))
+    else:
+        walls.append(
+            pygame.Rect( 0, 0, thick, WINDOW_HEIGHT))
+    if doors["right"]:
+        walls.append(
+            pygame.Rect(WINDOW_WIDTH - thick,0,thick, cy - half))
+        walls.append(
+            pygame.Rect(WINDOW_WIDTH - thick, cy + half, thick, WINDOW_HEIGHT - (cy + half)))
+    else:
+        walls.append(
+            pygame.Rect(WINDOW_WIDTH - thick, 0,thick, WINDOW_HEIGHT))
+    return walls
 
 def main(load_saved=False):
     global effect_surface, show_inventory, room_intro_active, room_intro_timer, room_intro_text, room_intro_boss, room_intro_last_char
@@ -1879,13 +2124,29 @@ def main(load_saved=False):
     save_data = load_game() if load_saved else None
     player=Player(WINDOW_WIDTH//2-24,WINDOW_HEIGHT//2-32)
     bgs=load_backgrounds()
+    room_pool = []
+    for room in bgs:
+        room_pool.append(room)
+        if (
+            room["doors"]["top"]
+            and room["doors"]["bottom"]
+            and room["doors"]["left"]
+            and room["doors"]["right"]
+        ):
+            room_pool.extend([room, room])
+    room_data = choice(room_pool)
+    cur_bg = room_data["image"]
+    
     try:
         power_bg=pygame.image.load(img_path(".vscode/Images/powerroom.png"))
         power_bg=pygame.transform.scale(power_bg,(WINDOW_WIDTH,WINDOW_HEIGHT))
+        BOSS_ROOM_BG = pygame.image.load(img_path(".vscode/Images/bossroom.png"))
+        BOSS_ROOM_BG = pygame.transform.scale(BOSS_ROOM_BG,(WINDOW_WIDTH,WINDOW_HEIGHT))
     except:
         power_bg=pygame.Surface((WINDOW_WIDTH,WINDOW_HEIGHT)); power_bg.fill((60,40,90))
+        BOSS_ROOM_BG=pygame.Surface((WINDOW_WIDTH,WINDOW_HEIGHT)); BOSS_ROOM_BG.fill(127, 255, 252)
 
-    cur_bg=choice(bgs); enemies=[]; slashes=[]; bullets=[]; powerup_items=[]
+    cur_bg = room_data["image"]; enemies=[]; slashes=[]; bullets=[]; powerup_items=[]
     num_of_lvl=0; room_x=0; room_y=0; room_enemy_progress = 0
     if save_data:
         room_x=save_data.get("room_x",0)
@@ -1896,16 +2157,25 @@ def main(load_saved=False):
         player.hp=min(player.max_hp,pdata.get("hp",player.hp))
         player.ammo=min(player.max_ammo,pdata.get("ammo",player.ammo))
         player.stats.update(pdata.get("stats",{}))
-    rooms={(0,0):{"cleared":True,"power":False,"background":cur_bg,"enemies":[],"powerups":[]}}
+    rooms={(0,0):{"cleared":True,"power":False,"background":cur_bg,"doors": room_data["doors"],"enemies":[],"powerups":[]}}
+    global current_room_walls
+    current_room_walls = build_room_walls(room_data["doors"], False)
     if (room_x,room_y)!=(0,0):
         rooms[(room_x,room_y)]={"cleared":True,"power":False,"background":cur_bg,"enemies":[],"powerups":[]}
-    paused=False; show_hitboxes=False; shift_held=False; entry_side=None; forced_next_room=None; credits_active=False
+    paused=False; show_hitboxes=False; left_shift_held=False; right_shift_held=False; entry_side=None; forced_next_room=None; credits_active=False; exit_side = None
 
     while True:
         font=get_font(30)
         fname=get_font(22,True)
         fdesc=get_font(18)
         clock.tick(FPS)
+        now = pygame.time.get_ticks()
+        for stop_time, channel in sound_stop_queue[:]:
+            if now >= stop_time:
+                channel.stop()
+                sound_stop_queue.remove(
+                    (stop_time, channel)
+                )
         e_pressed=False
         if credits_active:
             for ev in pygame.event.get():
@@ -1931,10 +2201,12 @@ def main(load_saved=False):
         for ev in pygame.event.get():
             if ev.type==pygame.QUIT: pygame.quit(); sys.exit()
             if ev.type==pygame.KEYDOWN:
-                if ev.key in (pygame.K_LSHIFT,pygame.K_RSHIFT):
-                    shift_held=True
+                if ev.key == pygame.K_LSHIFT:
+                    left_shift_held = True
                     if not paused and not show_inventory:
                         player.dash(pygame.key.get_pressed())
+                if ev.key == pygame.K_RSHIFT:
+                    right_shift_held = True
                 if ev.type == pygame.KEYDOWN:
                         if ev.key == pygame.K_TAB:
                             show_inventory = not show_inventory
@@ -1943,16 +2215,21 @@ def main(load_saved=False):
                 if ev.key==pygame.K_ESCAPE: paused=not paused
                 if paused and ev.key==pygame.K_s:
                     save_game(player, room_x, room_y, num_of_lvl)
-                if ev.key==pygame.K_F2 and shift_held: show_hitboxes=not show_hitboxes
+                if ev.key==pygame.K_F2 and right_shift_held: show_hitboxes=not show_hitboxes
                 if settings.get("dev_keys_enabled", False):
-                    if ev.key==pygame.K_F6 and shift_held: forced_next_room="boss"
-                    if ev.key==pygame.K_F7 and shift_held: forced_next_room="power"
+                    if ev.key==pygame.K_F6 and right_shift_held: forced_next_room="boss"
+                    if ev.key==pygame.K_F7 and right_shift_held: forced_next_room="power"
+                    if ev.key == pygame.K_F8 and right_shift_held: credits_active = True
+
                     if ev.key in (pygame.K_LCTRL, pygame.K_RCTRL) and enemies:
                         enemies.pop()
                 if ev.key==pygame.K_e: e_pressed=True
                 if paused and ev.key==pygame.K_q: return
             if ev.type==pygame.KEYUP:
-                if ev.key in (pygame.K_LSHIFT,pygame.K_RSHIFT): shift_held=False
+                if ev.key == pygame.K_LSHIFT:
+                    left_shift_held = False
+                if ev.key == pygame.K_RSHIFT:
+                    right_shift_held = False
             if not paused and not show_inventory:
                 if ev.type==pygame.MOUSEBUTTONDOWN:
                     if ev.button==1:
@@ -2086,6 +2363,7 @@ def main(load_saved=False):
         if all_clear and exit_side and not blocked:
             rooms[(room_x,room_y)]["powerups"]=[p for p in powerup_items if p.alive]
             teleport_player(player,exit_side)
+            old_room = (room_x, room_y)
             next_room=get_next_room_position(room_x,room_y,exit_side)
             room_x,room_y=next_room
             if next_room not in rooms:
@@ -2096,42 +2374,89 @@ def main(load_saved=False):
                     is_power = True
                     is_boss = False
                 else:
-                    is_power = randint(1, 100) <= 25
+                    previous_room = rooms[old_room]
+                    if previous_room.get("type") == "metal":
+                        is_power = True
+                    else:
+                        is_power = randint(1, 100) <= 25
                     is_boss = False
 
                 if not is_power and not is_boss:
-                    is_boss = should_spawn_boss()
+                    if num_of_lvl >= 20:
+                        is_boss = should_spawn_boss(exit_side)
+                    else:
+                        is_boss=False
                 forced_next_room=None
 
                 if is_boss:
-                    bg = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-                    bg.fill((127, 255, 212))
+                    bg = BOSS_ROOM_BG
                     boss_x, boss_y = boss_spawn_position(exit_side)
                     enemies_list = [BossEnemy(boss_x, boss_y)]
                 elif is_power:
                     bg = power_bg
                     enemies_list = []
                 else:
-                    bg = choice(bgs)
-                    enemies_list = spawn_enemies(min(20, 3 + num_of_lvl), player)
-
+                    while True:
+                        room_data = choice(room_pool)
+                        required = opposite_side(exit_side)
+                        if not room_data["doors"][required]:
+                            continue
+                        break
+                    bg = room_data["image"]
+                    enemies_list = spawn_enemies(
+                        min(30, 3 + num_of_lvl),
+                        player
+                    )
+                if is_boss:
+                    room_type = "boss"
+                    room_doors = {
+                        "top": False,
+                        "bottom": False,
+                        "left": False,
+                        "right": False
+                    }
+                elif is_power:
+                    room_type = "power"
+                    room_doors = {
+                        "top": True,
+                        "bottom": True,
+                        "left": False,
+                        "right": False
+                    }
+                else:
+                    room_type = (
+                        "metal"
+                        if room_data["metal"]
+                        else "normal"
+                    )
+                    room_doors = room_data["doors"]
                 rooms[next_room] = {
                     "cleared": False,
                     "power": is_power,
                     "boss": is_boss,
+                    "type": room_type,
                     "background": bg,
+                    "doors": room_doors,
                     "enemies": enemies_list,
-                    "powerups": spawn_powerup_items() if is_power else []
+                    "powerups": spawn_powerup_items(player) if is_power else [],
+                    "entry_side": exit_side,
                 }
                 if is_boss:
                     # boss zawsze jest pierwszy w liście enemies
                     start_room_intro(enemies_list[0])
-                num_of_lvl+=1
+                if not is_power:
+                    num_of_lvl += 1
             rd = rooms[next_room]
+            
+            current_room_walls = build_room_walls(
+                rd["doors"], rd.get("boss", False)
+            )
             cur_bg = rd["background"]
             enemies = [] if rd.get("cleared", False) else rd["enemies"]
             powerup_items=list(rd["powerups"])
             player.safe_timer=FPS; entry_side=exit_side
+            if rd.get("boss", False):
+                player.wall_ignore_timer = FPS
 
         for enemy in enemies:
             if player.hitbox.colliderect(enemy.rect) and player.safe_timer<=0:

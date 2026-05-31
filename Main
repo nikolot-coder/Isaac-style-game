@@ -936,7 +936,7 @@ class RangedEnemy(Enemy):
         self.color = (80, 120, 255)
         self.image = None
         try:
-            ranged_img = pygame.image.load(img_path(".vscode/Images/rangedenemy.png")).convert_alpha()
+            ranged_img = pygame.image.load(img_path(".vscode/Images/rangeenemy.png")).convert_alpha()
             self.image = pygame.transform.scale(ranged_img, (self.width, self.height))
         except:
             self.image = None

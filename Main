@@ -1005,9 +1005,9 @@ class BossEnemy(Enemy):
         self.trails = []
 
         self.image = None
-        for name in ("boss.png", "Boss.png", "Rabendix.png"):
+        for name in ("boss.png", "Boss.png", "BOSS.PNG.png", "BOSS,PNG.png", "Rabendix.png"):
             try:
-                boss_img = pygame.image.load(img_path(f".vscode/Images/{BOSS.png}")).convert_alpha()
+                boss_img = pygame.image.load(img_path(f".vscode/Images/{name}")).convert_alpha()
                 boss_img = pygame.transform.scale(boss_img, (scaled(120), scaled(120)))
                 boss_img.fill((70, 90, 170, 255), special_flags=pygame.BLEND_RGBA_MULT)
                 self.image = boss_img

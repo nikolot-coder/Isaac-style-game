@@ -1002,6 +1002,8 @@ class BossEnemy(Enemy):
         self.pending_dash = (0,0)
         self.trails = []
 
+        self.width = scaled(96)
+        self.height = scaled(128)
         self.image = None
         try:
             ranged_img = pygame.image.load(img_path(".vscode/Images/BOSS.PNG.png")).convert_alpha()
@@ -1009,10 +1011,9 @@ class BossEnemy(Enemy):
         except:
             self.image = None
         if self.image is None:
-            self.image = pygame.Surface((scaled(120), scaled(120)))
+            self.image = pygame.Surface((self.width, self.height))
             self.image.fill((20, 45, 130))
 
-        self.width=self.image.get_width(); self.height=self.image.get_height()
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
         self.learned = {
             "ranged": 0,
